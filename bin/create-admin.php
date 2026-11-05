@@ -26,7 +26,7 @@ use Ownswitch\Support\TenantScope;
 $flags = [];
 $opts = [];
 foreach (array_slice($argv, 1) as $a) {
-    if ($a === '--password-stdin' || $a === '--force-password-change') {
+    if ($a === '--password-stdin' || $a === '--force-password-change' || $a === '--reset-password') {
         $flags[$a] = true;
         continue;
     }
@@ -64,7 +64,16 @@ if ($problems = AuthService::passwordProblems($password)) {
 
 try {
     $users = new UserRepository(App::db());
-    if ($users->findByEmail($email) !== null) {
+    $existing = $users->findByEmail($email);
+    if ($existing !== null) {
+        if (isset($flags['--reset-password'])) {
+            $users->setPasswordHash((int) $existing['id'], password_hash($password, PASSWORD_DEFAULT));
+            // Clear lockouts so a fresh install password always works.
+            App::db()->prepare('UPDATE users SET failed_logins = 0, locked_until = NULL, status = ? WHERE id = ?')
+                ->execute(['active', (int) $existing['id']]);
+            echo "Updated password for existing {$role} #{$existing['id']}: {$email}\n";
+            exit(0);
+        }
         fwrite(STDERR, "A user with this email already exists.\n");
         exit(10);
     }

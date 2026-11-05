@@ -203,24 +203,23 @@ echo "-- admin --"
 PASS="${OWN_SWITCH_ADMIN_PASS:-$(openssl rand -base64 18 | tr -d '/+=' | head -c 18)Aa1!}"
 set +e
 printf '%s' "$PASS" | runuser -u ownswitch -- env OWNSWITCH_ENV_FILE="$OWN_ETC/ownswitch.env" \
-  php "$REL/bin/create-admin.php" --email="$EMAIL" --password-stdin
+  php "$REL/bin/create-admin.php" --email="$EMAIL" --password-stdin --reset-password
 rc=$?
 set -e
-if [[ $rc -eq 0 || $rc -eq 10 ]]; then
+if [[ $rc -eq 0 ]]; then
   umask 077
   cat > /root/ownswitch-credentials.txt <<EOF
 Ownswitch admin
-URL:      https://${DOMAIN}/
+URL:      https://${DOMAIN}/login
 Email:    ${EMAIL}
 Password: ${PASS}
-Note:     exit ${rc} (0=created, 10=already existed — password above may be new only if created)
 Generated: $(date -u -Iseconds)
 EOF
   chmod 600 /root/ownswitch-credentials.txt
   echo "Wrote /root/ownswitch-credentials.txt"
 else
   echo "create-admin failed rc=$rc — try manually:"
-  echo "  sudo OWNSWITCH_ENV_FILE=$OWN_ETC/ownswitch.env php $REL/bin/create_admin.php --email=$EMAIL --password='YourPass123!'"
+  echo "  printf '%s' 'YourPass' | sudo OWNSWITCH_ENV_FILE=$OWN_ETC/ownswitch.env php $REL/bin/create-admin.php --email=$EMAIL --password-stdin --reset-password"
 fi
 
 # ---------------------------------------------------------------------------
