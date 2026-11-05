@@ -62,7 +62,7 @@ else
   # signalwire-c is optional (mod_signalwire). Skip it — Ownswitch uses ESL/xml_curl only.
   ldconfig
 
-  # FreeSWITCH itself
+  # FreeSWITCH itself — force classic layout under prefix/conf (default FHS uses etc/freeswitch).
   log_info "Building FreeSWITCH ${FREESWITCH_VERSION}…"
   git clone --quiet --depth 1 --branch "${FREESWITCH_VERSION}" https://github.com/signalwire/freeswitch.git "$work/freeswitch"
   ( cd "$work/freeswitch" \
@@ -71,13 +71,60 @@ else
          -e 's/^(applications|formats)\/mod_av/#\1\/mod_av/' \
          -e 's/^applications\/mod_signalwire/#applications\/mod_signalwire/' \
          modules.conf \
-    && ./configure --prefix="${FS_PREFIX}" --enable-portable-binary --disable-dependency-tracking \
+    && ./configure --prefix="${FS_PREFIX}" --sysconfdir="${FS_PREFIX}/conf" \
+         --enable-portable-binary --disable-dependency-tracking \
     && make -j"$jobs_n" && make install \
-    && { [[ -d "${FS_PREFIX}/conf/vanilla" || -f "${FS_PREFIX}/conf/freeswitch.xml" ]] || make samples; } )
+    && { [[ -f "${FS_PREFIX}/conf/freeswitch.xml" ]] || make samples; } )
   [[ -x "${FS_PREFIX}/bin/freeswitch" ]] || die "FreeSWITCH build did not produce ${FS_PREFIX}/bin/freeswitch"
+  # Ensure runtime can resolve libfreeswitch.so without a manual ld.so.conf edit.
+  printf '%s\n' "${FS_PREFIX}/lib" > /etc/ld.so.conf.d/freeswitch.conf
+  ldconfig
   printf '%s\n' "${FREESWITCH_VERSION}" >"${MARK}"
   note_change "built FreeSWITCH ${FREESWITCH_VERSION}"
   rm -rf "$work"; trap - EXIT
+fi
+
+# Newer FreeSWITCH "make install" may place vanilla configs under etc/freeswitch when
+# --sysconfdir was not set. Ownswitch + systemd always use ${FS_PREFIX}/conf.
+ensure_fs_conf() {
+  local conf_dir="${FS_PREFIX}/conf"
+  local etc_dir="${FS_PREFIX}/etc/freeswitch"
+  if [[ -f "${conf_dir}/freeswitch.xml" ]]; then
+    return 0
+  fi
+  if [[ -f "${etc_dir}/freeswitch.xml" ]]; then
+    log_info "Migrating FreeSWITCH config ${etc_dir} → ${conf_dir}"
+    if [[ -e "$conf_dir" && ! -L "$conf_dir" ]]; then
+      mv "$conf_dir" "${conf_dir}.bak.$(date -u +%Y%m%d%H%M%S)"
+    fi
+    rm -f "$conf_dir"
+    mv "$etc_dir" "$conf_dir"
+    install -d -m 0755 "$(dirname "$etc_dir")"
+    ln -sfn "$conf_dir" "$etc_dir"
+    note_change "moved FreeSWITCH config to ${conf_dir}"
+    return 0
+  fi
+  # Last resort: re-seed samples into conf/ without a full rebuild.
+  if [[ -x "${FS_PREFIX}/bin/freeswitch" ]]; then
+    log_warn "No FreeSWITCH samples found; cloning vanilla conf into ${conf_dir}"
+    local tmp
+    tmp="$(mktemp -d /tmp/fs-conf.XXXXXX)"
+    git clone --quiet --depth 1 --branch "${FREESWITCH_VERSION}" \
+      https://github.com/signalwire/freeswitch.git "$tmp/fs"
+    install -d -m 0750 "$conf_dir"
+    cp -a "$tmp/fs/conf/vanilla/." "$conf_dir/"
+    rm -rf "$tmp"
+    [[ -f "${conf_dir}/freeswitch.xml" ]] || return 1
+    note_change "seeded FreeSWITCH vanilla conf into ${conf_dir}"
+    return 0
+  fi
+  return 1
+}
+ensure_fs_conf || die "FreeSWITCH config dir missing: ${FS_PREFIX}/conf (and no etc/freeswitch to migrate)"
+# Runtime libs (libfreeswitch.so) live under prefix/lib on source installs.
+if [[ ! -f /etc/ld.so.conf.d/freeswitch.conf ]]; then
+  printf '%s\n' "${FS_PREFIX}/lib" > /etc/ld.so.conf.d/freeswitch.conf
+  ldconfig
 fi
 
 ensure_system_user freeswitch "${FS_PREFIX}"
@@ -89,7 +136,7 @@ install -d -m 0750 -o freeswitch -g freeswitch "${FS_PREFIX}/log" "${FS_PREFIX}/
 # 2. Configuration: SIP 5060, RTP range, ESL, xml_curl, xml_cdr
 # ---------------------------------------------------------------------------
 conf="${FS_PREFIX}/conf"
-[[ -d "$conf" ]] || die "FreeSWITCH config dir missing: ${conf}"
+[[ -f "${conf}/freeswitch.xml" ]] || die "FreeSWITCH config dir missing: ${conf}/freeswitch.xml"
 fs_changed=0
 
 set_var() { # file regex-old new
