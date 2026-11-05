@@ -38,8 +38,8 @@ if [[ ! -f "${MOD_DIR}/mod_xml_curl.so" ]]; then
     grep -qE '^xml_int/mod_xml_curl' modules.conf || echo 'xml_int/mod_xml_curl' >> modules.conf
     ./configure --prefix="${FS_PREFIX}" --sysconfdir="${FS_PREFIX}/conf" \
       --enable-portable-binary --disable-dependency-tracking
-    make -j"$(nproc)" -C src/mod/xml_int/mod_xml_curl
-    make -C src/mod/xml_int/mod_xml_curl install
+    # Builds libfreeswitch if needed, then installs only this module.
+    make -j"$(nproc)" mod_xml_curl-install
   )
   ldconfig
   if [[ ! -f "${MOD_DIR}/mod_xml_curl.so" ]]; then
