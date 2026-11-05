@@ -193,19 +193,24 @@ if [[ -f "$REL/bin/migrate.php" ]]; then
 fi
 
 # Keep Sofia gateway include path correct without restarting the profile (no REGISTER flap).
+# Profile XML includes are relative to sip_profiles/ → external/*.xml
 FS_CONF="${FREESWITCH_CONF:-/usr/local/freeswitch/conf}"
 EXT_XML="${FS_CONF}/sip_profiles/external.xml"
-GOOD_INC='<X-PRE-PROCESS cmd="include" data="sip_profiles/external/*.xml"/>'
+GOOD_INC='<X-PRE-PROCESS cmd="include" data="external/*.xml"/>'
 if [[ -f "${EXT_XML}" ]]; then
-  if ! grep -q 'data="sip_profiles/external/\*\.xml"' "${EXT_XML}" \
-    || grep -qE 'data="(external/\*\.xml|/usr/local/freeswitch/conf/sip_profiles/external/\*\.xml)"' "${EXT_XML}"; then
+  if ! grep -q 'data="external/\*\.xml"' "${EXT_XML}" \
+    || grep -qE 'data="(sip_profiles/external/\*\.xml|/usr/local/freeswitch/conf/sip_profiles/external/\*\.xml)"' "${EXT_XML}"; then
     cp -a "${EXT_XML}" "${EXT_XML}.bak.ui.$(date +%s)" 2>/dev/null || true
     sed -i '/X-PRE-PROCESS cmd="include".*external\/\*\.xml/d' "${EXT_XML}" || true
     if grep -q '<gateways>' "${EXT_XML}"; then
       sed -i "s#<gateways>#<gateways>\n    ${GOOD_INC}#" "${EXT_XML}" || true
-      echo "Patched Sofia gateway include → sip_profiles/external/*.xml"
+      echo "Patched Sofia gateway include → external/*.xml"
     fi
   fi
+fi
+# Warn if directory auth module is missing (SIP REGISTER will Forbidden).
+if [[ ! -f /usr/local/freeswitch/lib/freeswitch/mod/mod_xml_curl.so ]]; then
+  echo "WARN: mod_xml_curl.so missing — SIP REGISTER will fail. Run: sudo bash $SRC/deploy/fix-fs-xml-curl.sh" >&2
 fi
 
 # Final service health (after helpers / migrations)

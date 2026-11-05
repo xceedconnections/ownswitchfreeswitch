@@ -37,14 +37,14 @@ else
 fi
 
 # Ensure external profile includes gateway XMLs (idempotent).
-# Correct path is conf-relative sip_profiles/external/*.xml (not external/*.xml / absolute globs).
+# Include is relative to sip_profiles/external.xml → external/*.xml
 if [[ -f "${EXT_XML}" ]]; then
   if grep -q '<gateways>' "${EXT_XML}"; then
-    if ! grep -q 'data="sip_profiles/external/\*\.xml"' "${EXT_XML}" \
-      || grep -qE 'data="(external/\*\.xml|/usr/local/freeswitch/conf/sip_profiles/external/\*\.xml)"' "${EXT_XML}"; then
+    if ! grep -q 'data="external/\*\.xml"' "${EXT_XML}" \
+      || grep -qE 'data="(sip_profiles/external/\*\.xml|/usr/local/freeswitch/conf/sip_profiles/external/\*\.xml)"' "${EXT_XML}"; then
       sed -i '/X-PRE-PROCESS cmd="include".*external\/\*\.xml/d' "${EXT_XML}"
-      sed -i 's#<gateways>#<gateways>\n    <X-PRE-PROCESS cmd="include" data="sip_profiles/external/*.xml"/>#' "${EXT_XML}"
-      echo "==> Set sip_profiles/external/*.xml include in ${EXT_XML}"
+      sed -i 's#<gateways>#<gateways>\n    <X-PRE-PROCESS cmd="include" data="external/*.xml"/>#' "${EXT_XML}"
+      echo "==> Set external/*.xml include in ${EXT_XML}"
     fi
   else
     echo "WARN: ${EXT_XML} has no <gateways> section — check Ownswitch external.xml template." >&2

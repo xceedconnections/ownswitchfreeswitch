@@ -37,8 +37,9 @@
     <param name="local-network-acl" value="localnet.auto"/>
   </settings>
   <gateways>
-    <!-- Must be relative to conf_dir. "external/*.xml" wrongly looks under conf/external.
-         Absolute paths often fail to expand globs on FreeSWITCH 1.10 — use sip_profiles/... -->
-    <X-PRE-PROCESS cmd="include" data="sip_profiles/external/*.xml"/>
+    <!-- Paths here are relative to this file (sip_profiles/), so external/*.xml
+         → conf/sip_profiles/external/gw-*.xml. Do NOT use sip_profiles/external/*.xml
+         (that doubles the folder) or absolute globs (unreliable on 1.10). -->
+    <X-PRE-PROCESS cmd="include" data="external/*.xml"/>
   </gateways>
 </profile>

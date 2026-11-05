@@ -70,7 +70,10 @@ else
     && sed -i -E \
          -e 's/^(applications|formats)\/mod_av/#\1\/mod_av/' \
          -e 's/^applications\/mod_signalwire/#applications\/mod_signalwire/' \
+         -e 's|^#?xml_int/mod_xml_curl|xml_int/mod_xml_curl|' \
+         -e 's|^#?xml_int/mod_xml_cdr|xml_int/mod_xml_cdr|' \
          modules.conf \
+    && grep -q '^xml_int/mod_xml_curl' modules.conf || echo 'xml_int/mod_xml_curl' >> modules.conf \
     && ./configure --prefix="${FS_PREFIX}" --sysconfdir="${FS_PREFIX}/conf" \
          --enable-portable-binary --disable-dependency-tracking \
     && make -j"$jobs_n" && make install \

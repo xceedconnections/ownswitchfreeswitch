@@ -61,8 +61,21 @@ final class FreeswitchXmlController
     {
         $user = trim((string) ($r->input('user', $r->input('sip_auth_username', ''))));
         $domain = trim((string) ($r->input('domain', $r->input('sip_auth_realm', ''))));
-        if ($user === '' || $domain === '') {
+        // FreeSWITCH often sends domain as key_value (tag_name=domain, key_name=name).
+        if ($domain === '') {
+            $domain = trim((string) $r->input('key_value', ''));
+        }
+        if ($domain === '') {
             return $this->notFound();
+        }
+        // Domain-only probe: return an empty domain shell so Sofia knows the realm exists.
+        if ($user === '') {
+            return '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<document type="freeswitch/xml"><section name="directory">'
+                . '<domain name="' . $this->x($domain) . '">'
+                . '<params><param name="dial-string" value="{presence_id=${dialed_user}@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/></params>'
+                . '<groups><group name="default"><users/></group></groups>'
+                . '</domain></section></document>';
         }
         $st = App::db()->prepare(
             "SELECT * FROM sip_accounts WHERE username = ? AND status = 'active' LIMIT 1"
