@@ -192,6 +192,22 @@ if [[ -f "$REL/bin/migrate.php" ]]; then
   fi
 fi
 
+# Keep Sofia gateway include path correct without restarting the profile (no REGISTER flap).
+FS_CONF="${FREESWITCH_CONF:-/usr/local/freeswitch/conf}"
+EXT_XML="${FS_CONF}/sip_profiles/external.xml"
+GOOD_INC='<X-PRE-PROCESS cmd="include" data="sip_profiles/external/*.xml"/>'
+if [[ -f "${EXT_XML}" ]]; then
+  if ! grep -q 'data="sip_profiles/external/\*\.xml"' "${EXT_XML}" \
+    || grep -qE 'data="(external/\*\.xml|/usr/local/freeswitch/conf/sip_profiles/external/\*\.xml)"' "${EXT_XML}"; then
+    cp -a "${EXT_XML}" "${EXT_XML}.bak.ui.$(date +%s)" 2>/dev/null || true
+    sed -i '/X-PRE-PROCESS cmd="include".*external\/\*\.xml/d' "${EXT_XML}" || true
+    if grep -q '<gateways>' "${EXT_XML}"; then
+      sed -i "s#<gateways>#<gateways>\n    ${GOOD_INC}#" "${EXT_XML}" || true
+      echo "Patched Sofia gateway include → sip_profiles/external/*.xml"
+    fi
+  fi
+fi
+
 # Final service health (after helpers / migrations)
 systemctl restart "$PHP_FPM_SVC" 2>/dev/null || systemctl restart php8.3-fpm 2>/dev/null || true
 systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true

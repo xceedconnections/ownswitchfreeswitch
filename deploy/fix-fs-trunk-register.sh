@@ -47,21 +47,22 @@ else
   install -d -m 0755 "${GW_DIR}"
 fi
 
-# Absolute include path — relative "external/*.xml" resolves under conf/ and misses sip_profiles/external
+# Correct include is relative to conf_dir: sip_profiles/external/*.xml
+# Wrong: external/*.xml (looks under conf/external). Absolute globs often fail on FS 1.10.
 EXT_XML="${FS_CONF}/sip_profiles/external.xml"
-ABS_INC="<X-PRE-PROCESS cmd=\"include\" data=\"${FS_CONF}/sip_profiles/external/*.xml\"/>"
+GOOD_INC='<X-PRE-PROCESS cmd="include" data="sip_profiles/external/*.xml"/>'
 if [[ -f "${EXT_XML}" ]]; then
-  if grep -q 'sip_profiles/external/\*\.xml' "${EXT_XML}"; then
-    echo "external.xml already uses absolute gateway include"
+  if grep -q 'data="sip_profiles/external/\*\.xml"' "${EXT_XML}" \
+    && ! grep -qE 'data="(external/\*\.xml|/usr/local/freeswitch/conf/sip_profiles/external/\*\.xml)"' "${EXT_XML}"; then
+    echo "external.xml already uses conf-relative sip_profiles/external/*.xml include"
   else
     cp -a "${EXT_XML}" "${EXT_XML}.bak.$(date +%s)"
-    # Replace relative include or inject into <gateways>
-    if grep -q 'data="external/\*\.xml"' "${EXT_XML}"; then
-      sed -i "s#data=\"external/\*\.xml\"#data=\"${FS_CONF}/sip_profiles/external/*.xml\"#" "${EXT_XML}"
-    elif grep -q '<gateways>' "${EXT_XML}"; then
-      sed -i "s#<gateways>#<gateways>\n    ${ABS_INC}#" "${EXT_XML}"
+    # Drop any previous gateway includes, then inject the good one once.
+    sed -i '/X-PRE-PROCESS cmd="include".*external\/\*\.xml/d' "${EXT_XML}"
+    if grep -q '<gateways>' "${EXT_XML}"; then
+      sed -i "s#<gateways>#<gateways>\n    ${GOOD_INC}#" "${EXT_XML}"
     fi
-    echo "Patched absolute gateway include into external.xml"
+    echo "Patched conf-relative gateway include into external.xml"
   fi
 fi
 

@@ -154,11 +154,23 @@ final class FreeswitchProvisioner
         $dir = $this->gatewayDir();
         $xml = $this->gatewayXml($trunk);
         $path = $dir . '/gw-' . $id . '.xml';
-        if (file_put_contents($path, $xml) === false) {
-            throw new \RuntimeException('Cannot write ' . $path);
+        $prev = is_file($path) ? (string) @file_get_contents($path) : '';
+        $unchanged = ($prev !== '' && hash('sha256', $prev) === hash('sha256', $xml));
+        if (!$unchanged) {
+            if (file_put_contents($path, $xml) === false) {
+                throw new \RuntimeException('Cannot write ' . $path);
+            }
+            @chmod($path, 0660);
         }
-        @chmod($path, 0660);
-        // New/changed gateways need killgw + reloadxml + rescan (rescan alone often keeps old params).
+        // Do not kill a healthy REGED gateway when XML did not change (avoids REGISTER flaps).
+        if ($unchanged) {
+            $st = $this->gatewayStatus($id);
+            $state = strtoupper((string) ($st['state'] ?? ''));
+            if (in_array($state, ['REGED', 'NOREG', 'UP'], true) || strtoupper((string) ($st['status'] ?? '')) === 'UP') {
+                return;
+            }
+        }
+        // New/changed gateways (or not loaded) need killgw + reloadxml + rescan.
         $this->reloadGateway($id);
     }
 
@@ -539,32 +551,39 @@ final class FreeswitchProvisioner
         }
 
         $ping = ((string) ($trunk['qualify'] ?? 'yes') === 'no') ? '0' : '30';
-        $params = '<param name="realm" value="' . $this->x($realm) . '"/>'
-            . '<param name="proxy" value="' . $this->x($proxy) . '"/>'
-            . '<param name="register-proxy" value="' . $this->x($proxy) . '"/>'
-            . '<param name="register" value="' . $register . '"/>'
-            . '<param name="register-transport" value="' . $this->x($transport) . '"/>'
-            . '<param name="retry-seconds" value="30"/>'
-            . '<param name="expire-seconds" value="3600"/>'
-            . '<param name="caller-id-in-from" value="true"/>'
-            . '<param name="ping" value="' . $ping . '"/>';
+        // Multi-line XML — Sofia reliably loads these; single-line blobs have failed to include.
+        $lines = [
+            '  <param name="realm" value="' . $this->x($realm) . '"/>',
+            '  <param name="proxy" value="' . $this->x($proxy) . '"/>',
+            '  <param name="register-proxy" value="' . $this->x($proxy) . '"/>',
+            '  <param name="register" value="' . $register . '"/>',
+            '  <param name="register-transport" value="' . $this->x($transport) . '"/>',
+            '  <param name="retry-seconds" value="30"/>',
+            '  <param name="expire-seconds" value="3600"/>',
+            '  <param name="caller-id-in-from" value="true"/>',
+            '  <param name="ping" value="' . $ping . '"/>',
+        ];
 
         if ($user !== '' && in_array($mode, ['register', 'invite'], true)) {
-            $params .= '<param name="username" value="' . $this->x($user) . '"/>'
-                . '<param name="password" value="' . $this->x($pass) . '"/>'
-                . '<param name="extension" value="' . $this->x($user) . '"/>'
-                . '<param name="extension-in-contact" value="true"/>';
+            $lines[] = '  <param name="username" value="' . $this->x($user) . '"/>';
+            $lines[] = '  <param name="password" value="' . $this->x($pass) . '"/>';
+            $lines[] = '  <param name="extension" value="' . $this->x($user) . '"/>';
+            $lines[] = '  <param name="extension-in-contact" value="true"/>';
         }
         if ($gwFromUser !== '') {
-            $params .= '<param name="from-user" value="' . $this->x($gwFromUser) . '"/>';
+            $lines[] = '  <param name="from-user" value="' . $this->x($gwFromUser) . '"/>';
         }
         if ($fromDomain !== '') {
-            $params .= '<param name="from-domain" value="' . $this->x($fromDomain) . '"/>';
+            $lines[] = '  <param name="from-domain" value="' . $this->x($fromDomain) . '"/>';
         } elseif ($mode === 'register') {
-            $params .= '<param name="from-domain" value="' . $this->x($host) . '"/>';
+            $lines[] = '  <param name="from-domain" value="' . $this->x($host) . '"/>';
         }
 
-        return '<include><gateway name="gw-' . $id . '">' . $params . '</gateway></include>' . "\n";
+        return "<include>\n"
+            . '  <gateway name="gw-' . $id . "\">\n"
+            . implode("\n", $lines) . "\n"
+            . "  </gateway>\n"
+            . "</include>\n";
     }
 
     private function pingToMs(string $raw): int
