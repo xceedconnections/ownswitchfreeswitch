@@ -1,0 +1,767 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ownswitch\Controllers;
+
+use Ownswitch\App;
+use Ownswitch\Http\Request;
+use Ownswitch\Integrations\FreeSWITCH\FreeswitchProvisioner;
+use Ownswitch\Repositories\BaseRepository;
+use Ownswitch\Repositories\SipAccountRepository;
+use Ownswitch\Services\Dnc\DncService;
+use Ownswitch\Services\Sip\SipOptionsProbe;
+use Ownswitch\Support\Crypto;
+use Ownswitch\Support\DstFormat;
+use Ownswitch\Support\MediaPolicy;
+use Ownswitch\Support\SipPeerOptions;
+
+/**
+ * SIP Users — OpenSIPS auth, fixed-host port, media/record, and peer signalling params.
+ */
+final class SipUserController extends CrudController
+{
+    protected string $base = '/sip-users';
+    protected string $singular = 'SIP User';
+    protected string $plural = 'SIP Users';
+    /** Customers may view SIP users only — staff/reseller create and edit. */
+    protected array $writeRoles = ['super_admin', 'admin', 'reseller'];
+    protected string $emptyHint = 'No SIP users. Create an account so a phone or PBX can register to OpenSIPS.';
+
+    private ?string $plainPassword = null;
+
+    protected function repo(): BaseRepository
+    {
+        return new SipAccountRepository($this->db());
+    }
+
+    protected function filterColumns(): array
+    {
+        return ['customer_id', 'status'];
+    }
+
+    /** @return array<string,string> */
+    private function dncGroupOptions(): array
+    {
+        try {
+            return (new DncService($this->db()))->groupOptions(false);
+        } catch (\Throwable) {
+            return ['' => '— None —'];
+        }
+    }
+
+    private function ensureSipDncColumn(): void
+    {
+        try {
+            $st = $this->db()->query(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sip_accounts' AND COLUMN_NAME = 'dnc_group_id'"
+            );
+            if ((int) $st->fetchColumn() === 0) {
+                $this->db()->exec(
+                    'ALTER TABLE sip_accounts ADD COLUMN dnc_group_id BIGINT UNSIGNED NULL DEFAULT NULL, ADD KEY idx_sip_accounts_dnc (dnc_group_id)'
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] sip dnc_group_id ensure: ' . $e->getMessage());
+        }
+    }
+
+    protected function fields(Request $r): array
+    {
+        DstFormat::ensureColumns($this->db());
+        $this->ensureSipDncColumn();
+        $f = [];
+        if (!$this->scope($r)->isCustomerRole()) {
+            $f[] = [
+                'name' => 'customer_id',
+                'label' => 'User',
+                'type' => 'select',
+                'required' => true,
+                'options' => $this->customerOptions($r),
+                'readonly_on_edit' => true,
+                'list' => true,
+                'section' => 'Account',
+            ];
+        }
+        $routes = ['' => '— use Tariff trunk group —'];
+        try {
+            foreach ($this->db()->query('SELECT id, name FROM routing_plans ORDER BY name LIMIT 500')->fetchAll() as $p) {
+                $routes[$p['id']] = $p['name'];
+            }
+        } catch (\Throwable) {
+        }
+
+        array_push($f,
+            [
+                'name' => 'username',
+                'label' => 'SIP user',
+                'required' => true,
+                'max' => 64,
+                'pattern' => '/^[A-Za-z0-9._-]{3,64}$/',
+                'readonly_on_edit' => true,
+                'list' => true,
+                'section' => 'Account',
+            ],
+            [
+                'name' => 'password',
+                'label' => 'SIP password',
+                'type' => 'password',
+                'max' => 128,
+                'help' => 'Required for Dynamic mode. Blank = auto-generate (create) or keep current (edit). Min 12 if typed. Hidden for IP based.',
+                'section' => 'Account',
+            ],
+            [
+                'name' => 'sip_host',
+                'label' => 'Host',
+                'max' => 190,
+                'default' => 'dynamic',
+                'help' => 'Dynamic mode uses “dynamic” (REGISTER from any IP). IP based: enter the PBX IP (e.g. ViciDial 192.131.111.144) — OpenSIPS ACL + firewall auto-update.',
+                'section' => 'Account',
+            ],
+            [
+                'name' => 'status',
+                'label' => 'Status',
+                'type' => 'select',
+                'required' => true,
+                'options' => ['active' => 'Active', 'disabled' => 'Inactive'],
+                'list' => true,
+                'default' => 'active',
+                'section' => 'Account',
+            ],
+            [
+                'name' => 'caller_id',
+                'label' => 'CallerID number',
+                'max' => 32,
+                'pattern' => '/^\+?[0-9]{3,30}$/',
+                'help' => 'Leave blank for passthrough (ViciDial / softphone From goes out). Used when mode = Fixed. Trunk From user still wins if set.',
+                'section' => 'CLI and dial format',
+            ],
+            [
+                'name' => 'caller_id_mode',
+                'label' => 'CallerID mode',
+                'type' => 'select',
+                'options' => SipPeerOptions::CALLER_ID_MODE,
+                'default' => 'passthrough',
+                'help' => 'Passthrough = whatever ViciDial/Eyebeam sends. Fixed = portal CallerID number. Display Name = use softphone Display Name as CLI (digits).',
+                'section' => 'CLI and dial format',
+            ],
+            [
+                'name' => 'cid_min_len',
+                'label' => 'Min CallerID length (digits)',
+                'type' => 'number',
+                'min' => 0,
+                'max' => 32,
+                'placeholder' => '11',
+                'help' => 'USA with country code = 11. Blank/0 = off. Shorter CLI → 484 Wrong CallerID Length.',
+                'section' => 'CLI and dial format',
+            ],
+            [
+                'name' => 'cid_max_len',
+                'label' => 'Max CallerID length (digits)',
+                'type' => 'number',
+                'min' => 0,
+                'max' => 32,
+                'placeholder' => '11',
+                'help' => 'USA = 11. Blank/0 = off. Longer CLI → 484 Wrong CallerID Length.',
+                'section' => 'CLI and dial format',
+            ],
+            [
+                'name' => 'dst_format',
+                'label' => 'Destination format',
+                'type' => 'select',
+                'options' => \Ownswitch\Support\DstFormat::OPTIONS,
+                'default' => \Ownswitch\Support\DstFormat::AS_IS,
+                'list' => true,
+                'help' => 'Rewrite the dialled number before the trunk. E.164 with + : 12135550123 → +12135550123. Trunk Destination format is applied after this.',
+                'section' => 'CLI and dial format',
+            ],
+            [
+                'name' => 'notes',
+                'label' => 'Description',
+                'max' => 255,
+                'section' => 'Account',
+            ],
+
+            [
+                'name' => 'connection_mode',
+                'label' => 'Type',
+                'type' => 'select',
+                'options' => SipPeerOptions::CONNECTION_MODE,
+                'default' => 'dynamic',
+                'help' => 'Dynamic = username/password REGISTER. IP based = fixed IP peer (no digest); Host IP + port go to OpenSIPS ACL and firewall automatically.',
+                'section' => 'Network',
+            ],
+            [
+                'name' => 'sip_port',
+                'label' => 'SIP port',
+                'type' => 'int',
+                'min' => 0,
+                'max' => 65535,
+                'default' => '5060',
+                'help' => 'IP based: peer signalling port (e.g. 7777 for ViciDial). Matched in OpenSIPS address ACL and opened on the firewall for that IP. 0 = any port (ACL only).',
+                'section' => 'Network',
+            ],
+            [
+                'name' => 'peer_type',
+                'label' => 'Peer style',
+                'type' => 'select',
+                'options' => SipPeerOptions::PEER_TYPE,
+                'default' => 'friend',
+                'help' => 'friend = softphone (register + call). peer = IP/PBX trunk style. Softphones: friend. IP based defaults to peer.',
+                'section' => 'Network',
+            ],
+            [
+                'name' => 'nat',
+                'label' => 'NAT',
+                'type' => 'select',
+                'options' => SipPeerOptions::NAT,
+                'default' => 'force_rport,comedia',
+                'help' => 'Signalling only (not media IP). Softphones behind NAT: force_rport,comedia. Does not force RTP through this server.',
+                'section' => 'Network',
+            ],
+            [
+                'name' => 'insecure',
+                'label' => 'Insecure',
+                'type' => 'select',
+                'options' => SipPeerOptions::INSECURE,
+                'default' => 'no',
+                'help' => 'port/invite: trust matching address entry (typical for IP-auth PBX). Digest still required when Host=dynamic.',
+                'section' => 'Network',
+            ],
+            [
+                'name' => 'qualify',
+                'label' => 'Qualify',
+                'type' => 'select',
+                'options' => SipPeerOptions::YES_NO,
+                'default' => 'no',
+                'help' => 'Optional OPTIONS latency only. Live/Registered always follows OpenSIPS location for Dynamic SIP users (Asterisk/ViciDial). Fixed-IP peers use OPTIONS when Qualify=Yes.',
+                'section' => 'Network',
+            ],
+
+            [
+                'name' => 'routing_plan_id',
+                'label' => 'Trunk group',
+                'type' => 'select',
+                'options' => $routes,
+                'list' => true,
+                'help' => 'Overrides the Tariff trunk group for this SIP user when set.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'dnc_group_id',
+                'label' => 'DNC group',
+                'type' => 'select',
+                'options' => $this->dncGroupOptions(),
+                'list' => true,
+                'help' => 'Block destinations in this Do Not Call list before any trunk/vendor is contacted (403). Trunk DNC is an extra check after routing.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'media_policy',
+                'label' => 'Media / record',
+                'type' => 'select',
+                'options' => [
+                    '' => 'Default (Settings)',
+                    'direct' => 'Direct (no RTPengine)',
+                    'relay' => 'Relay (RTPengine)',
+                    'record' => 'Record (RTPengine + record)',
+                ],
+                'list_options' => [
+                    '' => 'Default',
+                    'direct' => 'Direct',
+                    'relay' => 'Relay',
+                    'record' => 'Record',
+                ],
+                'default' => '',
+                'list' => true,
+                'help' => 'Controls media IP. Direct = phone↔carrier (no server in RTP). Relay = RTP via this server (RTPengine). Record = relay + recording. Use Direct if you do not want your server IP in SDP; switch to Relay if you get one-way audio.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'max_channels',
+                'label' => 'Call limit (CC)',
+                'type' => 'int',
+                'min' => -1,
+                'max' => 10000,
+                'required' => true,
+                'default' => '2',
+                'list' => true,
+                'help' => 'Max concurrent calls for this SIP user. -1 = unlimited.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'max_cps',
+                'label' => 'CPS',
+                'type' => 'int',
+                'min' => -1,
+                'max' => 1000,
+                'required' => true,
+                'default' => '1',
+                'list' => true,
+                'help' => 'Max calls per second for this SIP user. -1 = unlimited. Typical PBX values: 1–10.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'max_call_duration',
+                'label' => 'Max call duration (s)',
+                'type' => 'int',
+                'min' => 0,
+                'max' => 604800,
+                'default' => '0',
+                'list' => true,
+                'help' => '0 = use Settings → Prepaid hard max call duration (system default). Or set a custom max in seconds (e.g. 3600 = 1 hour).',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'rate_cap',
+                'label' => 'CAP (max buy $/min)',
+                'type' => 'number',
+                'min' => 0,
+                'placeholder' => '0.005',
+                'list' => true,
+                'help' => 'Max provider (buy) rate allowed for this user. If the selected trunk costs more than CAP for the dialled prefix, the call is rejected (403 Rate Cap Exceeded). Blank = no CAP. Example: CAP 0.005 blocks vendor 1401@0.009 but allows 1213@0.004.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'dtmfmode',
+                'label' => 'DTMF mode',
+                'type' => 'select',
+                'options' => SipPeerOptions::DTMF,
+                'default' => 'RFC2833',
+                'help' => 'Signalling style when DTMF is allowed. RFC2833 = telephone-event (recommended).',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'dtmf_pass',
+                'label' => 'Allow DTMF (press 1)',
+                'type' => 'select',
+                'options' => SipPeerOptions::DTMF_PASS,
+                'default' => 'yes',
+                'help' => 'Block = OpenSIPS absorbs SIP INFO DTMF and strips telephone-event so keypad digits are not passed to the far end.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'codecs',
+                'label' => 'Codecs',
+                'type' => 'multiselect',
+                'options' => SipPeerOptions::CODECS,
+                'default' => 'PCMU,PCMA',
+                'add_label' => '+ Add codec…',
+                'wide' => true,
+                'help' => 'Select one or more codecs (ulaw, alaw, G729, GSM, …). Chips can be removed with ×.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'allowtransfer',
+                'label' => 'Allow transfer',
+                'type' => 'select',
+                'options' => SipPeerOptions::YES_NO,
+                'default' => 'no',
+                'help' => 'Permit SIP REFER / attended transfer for this user.',
+                'section' => 'Routing & media',
+            ],
+
+            // Single list column: green/red dot + latency ms
+            ['name' => 'presence', 'label' => 'Live', 'list' => true, 'list_only' => true, 'section' => 'Account'],
+        );
+        return $f;
+    }
+
+    protected function extra(Request $r): array
+    {
+        return ['hideIdColumn' => true];
+    }
+
+    protected function enrichRows(Request $r, array $rows): array
+    {
+        if ($rows === []) {
+            return $rows;
+        }
+        $prov = FreeswitchProvisioner::fromConfig();
+        if (!$prov->enabled()) {
+            App::session()->flash(
+                'warning',
+                'Cannot read FreeSWITCH registrations: '
+                . ($prov->initError() !== '' ? $prov->initError() : 'ESL host or password missing in ownswitch.env')
+            );
+        }
+        $regs = $prov->enabled() ? $prov->registeredContacts() : [];
+        foreach ($rows as &$row) {
+            $user = strtolower(trim((string) ($row['username'] ?? '')));
+            $qualify = strtolower((string) ($row['qualify'] ?? 'yes')) === 'yes';
+            $reg = $regs[$user] ?? null;
+            if ($reg === null) {
+                foreach ($regs as $k => $info) {
+                    if ($k === $user || str_starts_with((string) $k, $user . '@') || str_ends_with((string) $k, '@' . $user)) {
+                        $reg = $info;
+                        break;
+                    }
+                    $c = strtolower((string) ($info['contact'] ?? ''));
+                    if ($c !== '' && str_contains($c, 'sip:' . $user . '@')) {
+                        $reg = $info;
+                        break;
+                    }
+                }
+            }
+            $host = trim((string) ($row['sip_host'] ?? 'dynamic'));
+            $port = (int) ($row['sip_port'] ?? 5060);
+            if ($port <= 0) {
+                $port = 5060;
+            }
+
+            $online = false;
+            $ms = null;
+
+            if ($reg !== null) {
+                $exp = (int) ($reg['expires'] ?? 0);
+                if ($exp > 0 && $exp <= time()) {
+                    $reg = null;
+                }
+            }
+
+            $isDynamic = $host === '' || strtolower($host) === 'dynamic';
+            if ($reg !== null) {
+                // OpenSIPS location/MI with future expires = registered.
+                // Live ms is the proxy's own SIP OPTIONS ping (nathelper), in milliseconds.
+                $online = true;
+                $fromOs = (int) ($reg['latency_ms'] ?? 0);
+                if ($fromOs > 0) {
+                    $ms = $fromOs;
+                }
+            } elseif ($qualify && !$isDynamic && filter_var($host, FILTER_VALIDATE_IP)) {
+                // Fixed-IP peer (no REGISTER): OPTIONS is the only liveness signal
+                $ms = SipOptionsProbe::rttMs($host, $port, 1.5, $user);
+                $online = $ms !== null;
+            }
+
+            $row['presence'] = [
+                'online' => $online,
+                'ms' => $ms,
+                'contact' => $reg['contact'] ?? '',
+                'received' => $reg['received'] ?? '',
+            ];
+            $row['reg_status'] = $online ? 'registered' : 'offline';
+            $row['latency_ms'] = $ms !== null ? $ms : ($online ? 'reg' : 'n/a');
+        }
+        unset($row);
+        return $rows;
+    }
+
+    protected function prepare(Request $r, array $data, ?array $existing): array
+    {
+        $domain = (string) App::config('app.integrations.opensips.sip_domain', 'sip.example.test');
+        $this->plainPassword = null;
+        $pw = $data['password'] ?? null;
+        unset($data['password']);
+
+        $prevMode = $this->resolveConnectionMode($existing ?? []);
+        $mode = strtolower(trim((string) ($data['connection_mode'] ?? '')));
+        if (!isset(SipPeerOptions::CONNECTION_MODE[$mode])) {
+            $hostGuess = trim((string) ($data['sip_host'] ?? ($existing['sip_host'] ?? 'dynamic')));
+            $mode = ($hostGuess !== '' && strtolower($hostGuess) !== 'dynamic' && filter_var($hostGuess, FILTER_VALIDATE_IP))
+                ? 'ip' : 'dynamic';
+        }
+        $data['connection_mode'] = $mode;
+
+        if (array_key_exists('sip_port', $data)) {
+            $p = (int) $data['sip_port'];
+            $data['sip_port'] = ($p < 0 || $p > 65535) ? 5060 : $p;
+        }
+
+        if ($mode === 'ip') {
+            $host = trim((string) ($data['sip_host'] ?? ''));
+            if ($host === '' || strtolower($host) === 'dynamic' || !filter_var($host, FILTER_VALIDATE_IP)) {
+                throw new \DomainException('IP based Type requires a valid Host IP on the Account tab (e.g. 192.131.111.144).');
+            }
+            $data['sip_host'] = $host;
+            $port = (int) ($data['sip_port'] ?? ($existing['sip_port'] ?? 5060));
+            if ($port < 0 || $port > 65535) {
+                throw new \DomainException('SIP port must be 0–65535 (0 = any port in OpenSIPS ACL).');
+            }
+            $data['sip_port'] = $port;
+            // IP peers: clear digest secrets from portal + OpenSIPS
+            $data['password_enc'] = null;
+            $data['ha1'] = str_repeat('0', 32);
+            $data['ha1b'] = str_repeat('0', 32);
+            $data['password_changed_at'] = gmdate('Y-m-d H:i:s');
+            $data['_clear_sip_secret'] = true;
+            // IP PBX peers: trust address ACL, no REGISTER
+            if (($prevMode !== 'ip' && (string) ($data['peer_type'] ?? '') === 'friend')
+                || (string) ($data['peer_type'] ?? '') === '') {
+                $data['peer_type'] = 'peer';
+            }
+            if (($prevMode !== 'ip' && (string) ($data['insecure'] ?? 'no') === 'no')
+                || (string) ($data['insecure'] ?? '') === '') {
+                $data['insecure'] = 'port,invite';
+            }
+            $pw = null; // ignore any posted password in IP mode
+        } else {
+            $data['sip_host'] = 'dynamic';
+            $switchingFromIp = $existing !== null && $prevMode === 'ip';
+            if ($pw !== null && $pw !== '' && mb_strlen((string) $pw) < 12) {
+                throw new \DomainException('SIP password must be at least 12 characters.');
+            }
+            if ($switchingFromIp && ($pw === null || $pw === '')) {
+                throw new \DomainException('Switching to Dynamic mode requires a new SIP password (min 12 characters).');
+            }
+            if ($existing === null) {
+                $data['domain'] = $domain;
+                $pw = ($pw === null || $pw === '') ? self::generatePassword() : $pw;
+                $username = (string) $data['username'];
+            } else {
+                $username = (string) $existing['username'];
+                if ($pw !== null && $pw !== '') {
+                    $data['domain'] = $domain;
+                } else {
+                    $domain = (string) $existing['domain'];
+                }
+            }
+            if ($pw !== null && $pw !== '') {
+                [$ha1, $ha1b] = FreeswitchProvisioner::ha1($username, $domain, (string) $pw);
+                $data['ha1'] = $ha1;
+                $data['ha1b'] = $ha1b;
+                $data['password_changed_at'] = gmdate('Y-m-d H:i:s');
+                $this->plainPassword = (string) $pw;
+                try {
+                    $data['password_enc'] = Crypto::encrypt((string) $pw);
+                } catch (\Throwable $e) {
+                    throw new \DomainException('Could not store SIP password: ' . $e->getMessage());
+                }
+            }
+        }
+
+        if ($mode === 'ip') {
+            if ($existing === null) {
+                $data['domain'] = $domain;
+            } else {
+                $data['domain'] = (string) ($existing['domain'] ?? $domain);
+            }
+        }
+
+        if (array_key_exists('media_policy', $data)) {
+            $data['media_policy'] = MediaPolicy::normalizeStored(
+                isset($data['media_policy']) ? (string) $data['media_policy'] : null
+            );
+        }
+        $data['dst_format'] = DstFormat::normalize(
+            isset($data['dst_format']) ? (string) $data['dst_format'] : null
+        );
+        $tg = $data['routing_plan_id'] ?? null;
+        $data['routing_plan_id'] = ($tg === null || $tg === '') ? null : (int) $tg;
+        if (!array_key_exists('dnc_group_id', $data) || $data['dnc_group_id'] === '' || $data['dnc_group_id'] === null) {
+            $data['dnc_group_id'] = null;
+        } else {
+            $data['dnc_group_id'] = (int) $data['dnc_group_id'];
+            if ($data['dnc_group_id'] <= 0) {
+                $data['dnc_group_id'] = null;
+            } else {
+                $opts = $this->dncGroupOptions();
+                if (!isset($opts[(string) $data['dnc_group_id']])) {
+                    throw new \DomainException('Select a valid DNC group.');
+                }
+            }
+        }
+
+        if (isset($data['codecs']) && is_string($data['codecs']) && $data['codecs'] !== '') {
+            $data['disallow'] = 'all';
+        }
+        $cid = trim((string) ($data['caller_id'] ?? ''));
+        $data['caller_id'] = $cid !== '' ? $cid : null;
+        $cidMode = strtolower(trim((string) ($data['caller_id_mode'] ?? 'passthrough')));
+        if (!isset(SipPeerOptions::CALLER_ID_MODE[$cidMode])) {
+            $cidMode = $cid !== '' ? 'fixed' : 'passthrough';
+        }
+        // Fixed mode with empty number → treat as passthrough so ViciDial CLI is kept
+        if ($cidMode === 'fixed' && $cid === '') {
+            $cidMode = 'passthrough';
+        }
+        $data['caller_id_mode'] = $cidMode;
+        $dp = strtolower(trim((string) ($data['dtmf_pass'] ?? 'yes')));
+        $data['dtmf_pass'] = $dp === 'no' ? 'no' : 'yes';
+        foreach (['cid_min_len', 'cid_max_len'] as $k) {
+            if (!array_key_exists($k, $data) || $data[$k] === '' || $data[$k] === null) {
+                $data[$k] = null;
+            } else {
+                $data[$k] = max(0, (int) $data[$k]);
+                if ($data[$k] === 0) {
+                    $data[$k] = null;
+                }
+            }
+        }
+        if (array_key_exists('max_cps', $data)) {
+            $cps = (int) $data['max_cps'];
+            if ($cps < -1) {
+                $cps = -1;
+            }
+            if ($cps > 1000) {
+                $cps = 1000;
+            }
+            $data['max_cps'] = $cps === 0 ? 1 : $cps;
+        }
+        if (array_key_exists('max_call_duration', $data)) {
+            $mcd = (int) $data['max_call_duration'];
+            if ($mcd < 0) {
+                $mcd = 0;
+            }
+            if ($mcd > 604800) {
+                $mcd = 604800;
+            }
+            // 1–59 → treat as mis-entry; bump to 60 when non-zero
+            if ($mcd > 0 && $mcd < 60) {
+                $mcd = 60;
+            }
+            $data['max_call_duration'] = $mcd;
+        }
+        if (!array_key_exists('rate_cap', $data) || $data['rate_cap'] === '' || $data['rate_cap'] === null) {
+            $data['rate_cap'] = null;
+        } else {
+            $cap = (float) $data['rate_cap'];
+            $data['rate_cap'] = $cap > 0 ? number_format($cap, 8, '.', '') : null;
+        }
+        return $data;
+    }
+
+    protected function afterSave(Request $r, int $id, array $data, ?array $existing): ?string
+    {
+        $row = $this->repo()->findInternal($id);
+        $prov = FreeswitchProvisioner::fromConfig();
+        $fw = new \Ownswitch\Services\System\SipPeerFirewallService();
+        $connMode = $this->resolveConnectionMode($row ?? $data);
+        if ($row) {
+            if (!$prov->enabled()) {
+                App::session()->flash('warning', 'Saved in portal, but FreeSWITCH is not available: '
+                    . ($prov->initError() !== '' ? $prov->initError() : 'ESL password missing'));
+            } else {
+                try {
+                    if ($row['status'] === 'active') {
+                        $effective = MediaPolicy::resolve(
+                            isset($row['media_policy']) ? (string) $row['media_policy'] : null,
+                            $this->db()
+                        );
+                        $row['_effective_media'] = $effective;
+                        if ($connMode === 'ip') {
+                            $row['_clear_sip_secret'] = true;
+                            $row['connection_mode'] = 'ip';
+                        } elseif ($this->plainPassword !== null) {
+                            $row['_plain_password'] = $this->plainPassword;
+                        }
+                        $prov->upsertSubscriber(
+                            (string) $row['username'],
+                            (string) $row['domain'],
+                            (string) $row['ha1'],
+                            (string) $row['ha1b'],
+                            $row
+                        );
+                        $prov->syncSipPeerProfile(
+                            (string) $row['username'],
+                            $effective === 'record' ? 'record' : $effective,
+                            (int) ($row['max_channels'] ?? 2),
+                            $row
+                        );
+                        $prov->reloadAddresses();
+                    } else {
+                        $prov->removeSubscriber((string) $row['username'], (string) $row['domain']);
+                        $prov->removeSipPeerProfile((string) $row['username']);
+                        $prov->reloadAddresses();
+                    }
+                } catch (\Throwable $e) {
+                    error_log('[ownswitch] FreeSWITCH provision SIP user: ' . $e->getMessage());
+                    App::session()->flash('warning', 'Saved, but FreeSWITCH provisioning failed: ' . mb_substr($e->getMessage(), 0, 240));
+                }
+            }
+
+            // Firewall: IP peers get allow rules; dynamic / disabled remove them
+            try {
+                if ($row['status'] === 'active' && $connMode === 'ip') {
+                    $ip = trim((string) ($row['sip_host'] ?? ''));
+                    $peerPort = (int) ($row['sip_port'] ?? 5060);
+                    $res = $fw->sync((string) $row['username'], $ip, $peerPort);
+                    if (!$res['ok']) {
+                        App::session()->flash('warning', 'SIP saved, but firewall sync failed: ' . mb_substr($res['detail'], 0, 200));
+                    }
+                } else {
+                    $fw->remove((string) $row['username']);
+                }
+            } catch (\Throwable $e) {
+                error_log('[ownswitch] SIP peer firewall: ' . $e->getMessage());
+                App::session()->flash('warning', 'SIP saved, but firewall update failed.');
+            }
+        }
+        if ($this->plainPassword !== null && $row && $connMode === 'dynamic') {
+            $realm = (string) App::config('app.integrations.opensips.sip_domain', (string) $row['domain']);
+            $proxy = trim((string) App::config('app.integrations.opensips.public_ip', ''));
+            if ($proxy === '') {
+                $proxy = $realm;
+            }
+            $port = (int) ($row['sip_port'] ?? 5060);
+            if ($port <= 0) {
+                $port = 5060;
+            }
+            return "SIP user saved. Softphone (no Proxy): User={$row['username']}  Pass={$this->plainPassword}  "
+                . "Domain={$proxy} OR {$realm} OR any FQDN→{$proxy}  Port={$port} UDP. "
+                . "Magnus-style: username+password+IP/FQDN — leave Outbound Proxy blank.";
+        }
+        if ($row && $connMode === 'ip' && $row['status'] === 'active') {
+            $ip = (string) ($row['sip_host'] ?? '');
+            $peerPort = (int) ($row['sip_port'] ?? 5060);
+            return "IP based SIP peer saved. Host={$ip} port={$peerPort}. Calls from that IP are accepted. Firewall updated.";
+        }
+        if ($row && $connMode === 'dynamic' && empty($row['password_enc'])) {
+            App::session()->flash(
+                'warning',
+                'Re-save this SIP user with a password once so FreeSWITCH can accept Domain=FQDN and Domain=IP.'
+            );
+        }
+        return null;
+    }
+
+    protected function afterDelete(Request $r, array $row): void
+    {
+        $prov = FreeswitchProvisioner::fromConfig();
+        if ($prov->enabled()) {
+            try {
+                $prov->removeSubscriber((string) $row['username'], (string) $row['domain']);
+                $prov->removeSipPeerProfile((string) $row['username']);
+                $prov->reloadAddresses();
+            } catch (\Throwable) {
+                App::session()->flash('warning', 'Deleted locally, but FreeSWITCH deprovisioning failed.');
+            }
+        }
+        try {
+            (new \Ownswitch\Services\System\SipPeerFirewallService())->remove((string) $row['username']);
+        } catch (\Throwable) {
+        }
+    }
+
+    protected function formValues(Request $r, ?array $existing, array $values): array
+    {
+        if (MediaPolicy::isDefault(isset($values['media_policy']) ? (string) $values['media_policy'] : null)) {
+            $values['media_policy'] = '';
+        }
+        $values['connection_mode'] = $this->resolveConnectionMode($values + ($existing ?? []));
+        if (($values['connection_mode'] ?? '') === 'dynamic') {
+            $values['sip_host'] = 'dynamic';
+        }
+        return $values;
+    }
+
+    /** @param array<string,mixed> $row */
+    private function resolveConnectionMode(array $row): string
+    {
+        $mode = strtolower(trim((string) ($row['connection_mode'] ?? '')));
+        if (isset(SipPeerOptions::CONNECTION_MODE[$mode])) {
+            return $mode;
+        }
+        $host = trim((string) ($row['sip_host'] ?? 'dynamic'));
+        if ($host !== '' && strtolower($host) !== 'dynamic' && filter_var($host, FILTER_VALIDATE_IP)) {
+            return 'ip';
+        }
+        return 'dynamic';
+    }
+
+    public static function generatePassword(int $bytes = 15): string
+    {
+        return rtrim(strtr(base64_encode(random_bytes($bytes)), '+/', 'Ab'), '=') . '7';
+    }
+}

@@ -1,0 +1,28 @@
+# Ownswitch - Apache / XAMPP front controller. Requires mod_rewrite (enabled in XAMPP) and AllowOverride All.
+Options -Indexes -MultiViews
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block dotfiles (.env, .git ...) and PHP files other than the front controller
+    RewriteRule (^|/)\.(?!well-known) - [F,L]
+
+    # Pass Authorization header through
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Serve real files (assets) directly, everything else goes to index.php
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+</IfModule>
+
+# Never serve these even if misplaced under public/
+<FilesMatch "\.(env|sql|md|log|ini|json|lock)$">
+    Require all denied
+</FilesMatch>

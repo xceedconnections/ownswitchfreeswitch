@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# =============================================================================
+# ownswitch-backup - encrypted backup of everything needed to rebuild a host.
+# Installed by stage 95 to /usr/local/sbin/ownswitch-backup and run daily by
+# ownswitch-backup.timer. May also be run by hand:  sudo ownswitch-backup
+#
+# Contents (single AES-256 encrypted archive):
+#   mysql/{ownswitch,opensips,cgrates}.sql   consistent dumps (--single-transaction)
+#   redis/dump.rdb                           CGRateS DataDB snapshot
+#   files/                                   /etc/ownswitch (incl. secrets), /etc/cgrates, OpenSIPS,
+#                                            RTPengine, nginx vhost, MySQL/Redis drop-ins, TLS material
+# NOT included by default: call recordings (BACKUP_INCLUDE_RECORDINGS=1 to add) and app releases
+# (they are reproducible from git).
+#
+# Config (env or /etc/ownswitch/backup.conf, KEY=VALUE):
+#   BACKUP_DIR=/var/backups/ownswitch   RETENTION_DAYS=14
+#   BACKUP_RSYNC_TARGET=user@host:/path (optional off-site copy via rsync over ssh)
+#   BACKUP_INCLUDE_RECORDINGS=0
+# The encryption passphrase is /etc/ownswitch/secrets/backup_passphrase.
+# KEEP AN OFFLINE COPY OF THAT PASSPHRASE - without it backups are unreadable.
+#
+# (chmod +x on Linux; Windows checkouts cannot store the exec bit.)
+# =============================================================================
+set -Eeuo pipefail
+umask 077
+
+CONF="/etc/ownswitch/backup.conf"
+if [[ -r "$CONF" ]]; then
+  while IFS='=' read -r k v; do
+    [[ "$k" =~ ^[A-Z_]+$ ]] || continue
+    [[ -z "${!k+x}" ]] && export "$k=${v//\"/}"
+  done <"$CONF"
+fi
+
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/ownswitch}"
+RETENTION_DAYS="${RETENTION_DAYS:-14}"
+BACKUP_INCLUDE_RECORDINGS="${BACKUP_INCLUDE_RECORDINGS:-0}"
+PASS_FILE="/etc/ownswitch/secrets/backup_passphrase"
+REDIS_PASS_FILE="/etc/ownswitch/secrets/redis_password"
+TS="$(date -u +%Y%m%dT%H%M%SZ)"
+HOST="$(hostname -s)"
+NAME="ownswitch-${HOST}-${TS}"
+
+log() { printf '%s [backup] %s\n' "$(date -u +%FT%TZ)" "$*"; }
+die() { log "ERROR: $*"; exit 1; }
+
+[[ ${EUID} -eq 0 ]] || die "run as root"
+[[ -s "$PASS_FILE" ]] || die "missing passphrase file ${PASS_FILE}"
+install -d -m 0700 "$BACKUP_DIR"
+
+# free-space guard (need roughly 2x current MySQL datadir)
+need_kb=$(( $(du -sk /var/lib/mysql 2>/dev/null | cut -f1) * 2 + 102400 ))
+avail_kb=$(df -Pk "$BACKUP_DIR" | awk 'NR==2{print $4}')
+(( avail_kb > need_kb )) || die "not enough free space in ${BACKUP_DIR} (${avail_kb}KB < ${need_kb}KB)"
+
+WORK="$(mktemp -d "${BACKUP_DIR}/.work.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+mkdir -p "$WORK/$NAME/mysql" "$WORK/$NAME/redis" "$WORK/$NAME/files"
+
+log "dumping MySQL databases"
+for db in ownswitch opensips cgrates; do
+  mysqldump --protocol=socket -uroot --single-transaction --quick --routines --events --triggers \
+            --set-gtid-purged=OFF --default-character-set=utf8mb4 --databases "$db" >"$WORK/$NAME/mysql/${db}.sql"
+done
+
+log "snapshotting Redis"
+if [[ -s "$REDIS_PASS_FILE" ]]; then
+  REDISCLI_AUTH="$(cat "$REDIS_PASS_FILE")" redis-cli -h 127.0.0.1 --rdb "$WORK/$NAME/redis/dump.rdb" >/dev/null
+else
+  log "WARN: redis password file missing, skipping Redis snapshot"
+fi
+
+log "collecting configuration"
+paths=(/etc/ownswitch /etc/cgrates /etc/opensips /etc/rtpengine /etc/nginx/sites-available/ownswitch.conf
+       /etc/php/8.3/fpm/pool.d/ownswitch.conf /etc/mysql/mysql.conf.d/99-ownswitch.cnf /etc/redis/ownswitch.conf
+       /etc/ssl/ownswitch /etc/systemd/system/cgrates.service /etc/systemd/system/ownswitch-*.service
+       /etc/systemd/system/ownswitch-*.timer /etc/ufw/user.rules /etc/ufw/user6.rules /etc/letsencrypt)
+if [[ "${BACKUP_INCLUDE_RECORDINGS}" == "1" ]]; then paths+=(/var/lib/ownswitch/recordings); fi
+existing=()
+for p in "${paths[@]}"; do for g in $p; do [[ -e "$g" ]] && existing+=("$g"); done; done
+tar --absolute-names -C / -cf "$WORK/$NAME/files/config.tar" "${existing[@]}" 2>/dev/null || true
+printf 'created=%s\nhost=%s\nmysql=%s\n' "$TS" "$HOST" "$(mysqld --version 2>/dev/null || true)" >"$WORK/$NAME/MANIFEST"
+
+log "encrypting archive"
+OUT="${BACKUP_DIR}/${NAME}.tar.gz.enc"
+tar -C "$WORK" -czf - "$NAME" \
+  | openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass "file:${PASS_FILE}" -out "${OUT}.partial"
+mv "${OUT}.partial" "$OUT"
+( cd "$BACKUP_DIR" && sha256sum "$(basename "$OUT")" >"$(basename "$OUT").sha256" )
+chmod 0600 "$OUT" "${OUT}.sha256"
+log "created ${OUT} ($(du -h "$OUT" | cut -f1))"
+
+log "pruning backups older than ${RETENTION_DAYS} days"
+find "$BACKUP_DIR" -maxdepth 1 -type f -name 'ownswitch-*.tar.gz.enc*' -mtime +"${RETENTION_DAYS}" -delete
+
+if [[ -n "${BACKUP_RSYNC_TARGET:-}" ]]; then
+  log "rsync to ${BACKUP_RSYNC_TARGET}"
+  rsync -a --partial -e "ssh -o BatchMode=yes" "$OUT" "${OUT}.sha256" "${BACKUP_RSYNC_TARGET}/" || log "WARN: off-site rsync failed"
+fi
+
+# verify the archive is decryptable (cheap integrity check of the header + gzip stream)
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass "file:${PASS_FILE}" -in "$OUT" | tar -tzf - >/dev/null \
+  || die "verification failed for ${OUT}"
+log "backup OK"

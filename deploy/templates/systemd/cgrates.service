@@ -1,0 +1,33 @@
+# Managed by Ownswitch installer - rendered from deploy/templates/systemd/cgrates.service
+[Unit]
+Description=CGRateS rating / charging engine (Ownswitch)
+Documentation=https://github.com/cgrates/cgrates
+After=network-online.target mysql.service redis-server.service
+Wants=network-online.target
+Requires=mysql.service redis-server.service
+
+[Service]
+Type=simple
+User=cgrates
+Group=cgrates
+ExecStart=/usr/local/bin/cgr-engine -config_path=/etc/cgrates
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/cgrates /var/log/cgrates
+# Only loopback + the local DB/Redis sockets are needed
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

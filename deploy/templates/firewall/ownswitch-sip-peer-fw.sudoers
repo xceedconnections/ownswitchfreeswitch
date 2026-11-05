@@ -1,0 +1,2 @@
+# Ownswitch portal may sync IP-based SIP peer firewall allows.
+ownswitch ALL=(root) NOPASSWD: /usr/local/sbin/ownswitch-sip-peer-fw

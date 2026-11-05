@@ -1,0 +1,13 @@
+---
+description: Always commit finished work and push to GitHub
+alwaysApply: true
+---
+
+# Always push to GitHub
+
+After completing code changes the user asked for:
+
+1. Create a git commit for the relevant files (exclude secrets, `.env`, and unrelated CRLF/noise).
+2. Immediately `git push` the current branch to `origin` (do not wait to be asked).
+3. Do not force-push to `main`/`master` unless the user explicitly requests it.
+4. Report the commit SHA and that the push succeeded (or the error if push failed).

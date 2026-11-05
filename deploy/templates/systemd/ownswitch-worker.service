@@ -1,0 +1,38 @@
+# Managed by Ownswitch installer - rendered from deploy/templates/systemd/ownswitch-worker.service
+# Long-running queue/worker process (CDR ingest, provisioning sync, fraud checks ...).
+# Contract: `php bin/worker.php` blocks and handles SIGTERM gracefully. The unit is a no-op until the
+# application ships that file (ConditionPathExists).
+[Unit]
+Description=Ownswitch background worker
+After=network-online.target mysql.service redis-server.service cgrates.service opensips.service
+Wants=network-online.target
+ConditionPathExists=@@OWN_OPT@@/current/bin/worker.php
+
+[Service]
+Type=simple
+User=ownswitch
+Group=ownswitch
+WorkingDirectory=@@OWN_OPT@@/current
+EnvironmentFile=@@OWN_ETC@@/ownswitch.env
+Environment=OWNSWITCH_ENV_FILE=@@OWN_ETC@@/ownswitch.env
+ExecStart=/usr/bin/php @@OWN_OPT@@/current/bin/worker.php
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+KillSignal=SIGTERM
+StandardOutput=append:@@OWN_LOG@@/worker.log
+StandardError=append:@@OWN_LOG@@/worker.log
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=@@OWN_VAR@@ @@OWN_LOG@@
+
+[Install]
+WantedBy=multi-user.target

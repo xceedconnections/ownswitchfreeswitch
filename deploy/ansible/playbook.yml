@@ -1,0 +1,109 @@
+---
+# Ownswitch - thin Ansible wrapper around deploy/install.sh
+#
+#   ansible-playbook -i deploy/ansible/inventory.example deploy/ansible/playbook.yml \
+#       -e ownswitch_domain=voip.example.com -e ownswitch_admin_email=ops@example.com
+#
+# Secrets (admin password) are NEVER stored in this repo or in inventory. Pass them at runtime:
+#   OWN_SWITCH_ADMIN_PASS='...' ansible-playbook ...     (read via lookup('env'), hidden with no_log)
+# or leave it unset and the installer generates one into /root/ownswitch-initial-admin.txt.
+#
+# Requirements on the control node: ansible-core >= 2.15 and the ansible.posix collection
+#   ansible-galaxy collection install ansible.posix
+#
+# The playbook does the same things as the scripts (it simply runs them): idempotent, safe to re-run.
+- name: Install / converge Ownswitch on Ubuntu 24.04
+  hosts: ownswitch
+  become: true
+  gather_facts: true
+
+  vars:
+    ownswitch_src_dir: "{{ playbook_dir }}/../.."            # repo root on the control node
+    ownswitch_remote_src: /opt/ownswitch-installer            # where the repo is copied on the target
+    ownswitch_domain: "{{ ansible_fqdn }}"
+    ownswitch_admin_email: "admin@{{ ownswitch_domain }}"
+    ownswitch_letsencrypt_email: ""
+    ownswitch_freeswitch_enabled: 0
+    ownswitch_sip_allow_cidrs: ""      # e.g. "203.0.113.10/32,198.51.100.0/24"
+    ownswitch_ssh_allow_cidrs: ""      # e.g. "192.0.2.0/24"
+    ownswitch_public_ip: ""            # empty = auto-detect
+    ownswitch_app_src: ""              # empty = repo root (placeholder release if no public/index.php)
+    ownswitch_fetch_report_to: "{{ playbook_dir }}/reports"
+
+  pre_tasks:
+    - name: Assert Ubuntu 24.04 (noble)
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'Ubuntu'
+          - ansible_distribution_version == '24.04'
+        fail_msg: "Ownswitch supports Ubuntu Server 24.04 LTS only."
+
+    - name: Install installer prerequisites
+      ansible.builtin.apt:
+        name: [rsync, curl, ca-certificates, perl, openssl]
+        update_cache: true
+        cache_valid_time: 3600
+
+  tasks:
+    - name: Copy repository (deploy/ + application) to the target
+      ansible.posix.synchronize:
+        src: "{{ ownswitch_src_dir }}/"
+        dest: "{{ ownswitch_remote_src }}/"
+        delete: true
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=deploy/secrets/*"
+          - "--include=deploy/secrets/README.md"
+          - "--exclude=.env"
+          - "--exclude=node_modules"
+
+    - name: Ensure installer scripts are executable
+      ansible.builtin.shell: |
+        find {{ ownswitch_remote_src }}/deploy -type f \( -name '*.sh' -o -path '*/bin/*' \) -exec chmod 0755 {} +
+      changed_when: false
+
+    - name: Write NON-SECRET installer settings
+      ansible.builtin.copy:
+        dest: /etc/ownswitch-install.conf.ansible
+        owner: root
+        group: root
+        mode: "0640"
+        content: |
+          OWNSWITCH_DOMAIN={{ ownswitch_domain }}
+          OWNSWITCH_ADMIN_EMAIL={{ ownswitch_admin_email }}
+          LETSENCRYPT_EMAIL={{ ownswitch_letsencrypt_email }}
+          FREESWITCH_ENABLED={{ ownswitch_freeswitch_enabled }}
+          SIP_ALLOW_CIDRS={{ ownswitch_sip_allow_cidrs }}
+          SSH_ALLOW_CIDRS={{ ownswitch_ssh_allow_cidrs }}
+          {% if ownswitch_public_ip | length > 0 %}
+          PUBLIC_IP={{ ownswitch_public_ip }}
+          {% endif %}
+          {% if ownswitch_app_src | length > 0 %}
+          APP_SRC={{ ownswitch_app_src }}
+          {% endif %}
+
+    - name: Run the installer (all stages, idempotent)
+      ansible.builtin.command:
+        cmd: "{{ ownswitch_remote_src }}/deploy/install.sh --non-interactive --config /etc/ownswitch-install.conf.ansible"
+      environment:
+        OWN_SWITCH_ADMIN_PASS: "{{ lookup('env', 'OWN_SWITCH_ADMIN_PASS') }}"
+      no_log: true            # the environment may contain the admin password
+      register: ownswitch_install
+      changed_when: "'CHANGED:' in (ownswitch_install.stderr | default('') + ownswitch_install.stdout | default(''))"
+
+    - name: Read latest deployment report
+      ansible.builtin.slurp:
+        src: /var/lib/ownswitch-install/reports/latest.txt
+      register: ownswitch_report
+
+    - name: Fetch report to the control node
+      ansible.builtin.copy:
+        content: "{{ ownswitch_report.content | b64decode }}"
+        dest: "{{ ownswitch_fetch_report_to }}/{{ inventory_hostname }}-deploy-report.txt"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+    - name: Show report summary
+      ansible.builtin.debug:
+        msg: "{{ (ownswitch_report.content | b64decode).split('\n')[8:12] }}"

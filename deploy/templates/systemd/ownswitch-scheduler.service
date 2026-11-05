@@ -1,0 +1,24 @@
+# Managed by Ownswitch installer - rendered from deploy/templates/systemd/ownswitch-scheduler.service
+# One-shot cron-style tick, fired every minute by ownswitch-scheduler.timer.
+# Contract: `php bin/console schedule:run` executes due jobs (report:rollup, provision:sync, fraud:scan, ...).
+[Unit]
+Description=Ownswitch scheduler tick
+After=mysql.service redis-server.service
+ConditionPathExists=@@OWN_OPT@@/current/bin/console
+
+[Service]
+Type=oneshot
+User=ownswitch
+Group=ownswitch
+WorkingDirectory=@@OWN_OPT@@/current
+EnvironmentFile=@@OWN_ETC@@/ownswitch.env
+Environment=OWNSWITCH_ENV_FILE=@@OWN_ETC@@/ownswitch.env
+ExecStart=/usr/bin/php @@OWN_OPT@@/current/bin/console schedule:run
+TimeoutStartSec=300
+StandardOutput=append:@@OWN_LOG@@/scheduler.log
+StandardError=append:@@OWN_LOG@@/scheduler.log
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=@@OWN_VAR@@ @@OWN_LOG@@

@@ -1,0 +1,12 @@
+# Managed by Ownswitch installer - rendered from deploy/templates/systemd/ownswitch-backup.timer
+[Unit]
+Description=Daily Ownswitch backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=15min
+Persistent=true
+Unit=ownswitch-backup.service
+
+[Install]
+WantedBy=timers.target

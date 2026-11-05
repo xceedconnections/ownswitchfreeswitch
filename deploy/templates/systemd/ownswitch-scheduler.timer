@@ -1,0 +1,12 @@
+# Managed by Ownswitch installer - rendered from deploy/templates/systemd/ownswitch-scheduler.timer
+[Unit]
+Description=Run the Ownswitch scheduler every minute
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+AccuracySec=1s
+Unit=ownswitch-scheduler.service
+
+[Install]
+WantedBy=timers.target

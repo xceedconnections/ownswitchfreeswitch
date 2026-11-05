@@ -1,0 +1,4 @@
+# Ownswitch portal Version → Update now
+ownswitch ALL=(root) NOPASSWD: /usr/local/sbin/ownswitch-update
+ownswitch ALL=(root) NOPASSWD: /bin/bash /opt/ownswitch-src/deploy/refresh-ui.sh
+ownswitch ALL=(root) NOPASSWD: /usr/bin/bash /opt/ownswitch-src/deploy/refresh-ui.sh

@@ -1,0 +1,13 @@
+# Managed by Ownswitch installer - rendered from deploy/templates/systemd/ownswitch-backup.service
+[Unit]
+Description=Ownswitch encrypted backup (MySQL x3, Redis, configuration)
+After=mysql.service redis-server.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ownswitch-backup
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=3h
+StandardOutput=append:@@OWN_LOG@@/backup.log
+StandardError=append:@@OWN_LOG@@/backup.log

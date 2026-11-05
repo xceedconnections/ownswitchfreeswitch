@@ -1,0 +1,13 @@
+# Managed by Ownswitch (portal Firewall / deploy)
+# Auto-bans IPs that hammer portal login (wrong password or CAPTCHA)
+[ownswitch-portal]
+enabled  = true
+filter   = ownswitch-portal
+port     = http,https
+protocol = tcp
+backend  = systemd
+journalmatch = SYSLOG_IDENTIFIER=ownswitch-portal
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+action   = %(action_)s

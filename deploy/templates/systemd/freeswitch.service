@@ -1,0 +1,34 @@
+# Managed by Ownswitch installer - rendered from deploy/templates/systemd/freeswitch.service
+# Only installed when FREESWITCH_ENABLED=1
+[Unit]
+Description=FreeSWITCH (Ownswitch SIP edge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=freeswitch
+Group=freeswitch
+RuntimeDirectory=freeswitch
+RuntimeDirectoryMode=0750
+Environment=FREESWITCH_PID=/run/freeswitch/freeswitch.pid
+ExecStart=@@FS_PREFIX@@/bin/freeswitch -nc -nf -nonat -conf @@FS_PREFIX@@/conf -db @@FS_PREFIX@@/db -log @@FS_PREFIX@@/log -run /run/freeswitch
+ExecReload=/usr/bin/env kill -HUP $MAINPID
+TimeoutStartSec=120
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=100000
+LimitCORE=infinity
+LimitSTACK=240
+LimitRTPRIO=infinity
+LimitRTTIME=7000000
+IOSchedulingClass=realtime
+IOSchedulingPriority=2
+CPUSchedulingPolicy=rr
+CPUSchedulingPriority=89
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+{
+    "name": "ownswitch/ownswitch",
+    "description": "Ownswitch - native PHP VoIP billing portal (no framework, zero runtime dependencies)",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.2",
+        "ext-pdo": "*",
+        "ext-bcmath": "*",
+        "ext-mbstring": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ownswitch\\": "app/"
+        }
+    },
+    "scripts": {
+        "test": "php tests/run.php",
+        "migrate": "php bin/migrate.php"
+    }
+}

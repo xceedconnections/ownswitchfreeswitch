@@ -1,0 +1,17 @@
+# Copy to deploy/ansible/inventory (git-ignored) and edit. No secrets in here!
+#
+#   ansible-playbook -i deploy/ansible/inventory deploy/ansible/playbook.yml
+
+[ownswitch]
+# one host per Ownswitch deployment (single-host topology in Phase 2)
+voip1.example.com ansible_user=ubuntu ansible_become=true
+
+[ownswitch:vars]
+ansible_python_interpreter=/usr/bin/python3
+# non-secret overrides (see the vars block at the top of playbook.yml)
+ownswitch_domain=voip1.example.com
+ownswitch_admin_email=ops@example.com
+ownswitch_letsencrypt_email=ops@example.com
+ownswitch_freeswitch_enabled=0
+#ownswitch_sip_allow_cidrs=203.0.113.10/32,198.51.100.0/24
+#ownswitch_ssh_allow_cidrs=192.0.2.0/24

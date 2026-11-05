@@ -1,0 +1,3 @@
+# Ownswitch portal (php-fpm user=ownswitch) may run the SIP fail2ban helper.
+# The helper validates arguments (IP / thresholds) before calling fail2ban-client.
+ownswitch ALL=(root) NOPASSWD: /usr/local/sbin/ownswitch-fail2ban
