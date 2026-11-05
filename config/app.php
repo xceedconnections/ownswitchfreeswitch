@@ -61,6 +61,9 @@ return [
                 'password'   => $pass,
                 'xml_secret' => trim((string) Env::get('FS_XML_SECRET', '')),
                 'conf_dir'   => (string) Env::get('FREESWITCH_CONF', '/usr/local/freeswitch/conf'),
+                // Writable by PHP-FPM (inside open_basedir OWN_VAR). Symlinked into Sofia external/.
+                'gateway_dir' => (string) (Env::get('FREESWITCH_GATEWAY_DIR')
+                    ?: (rtrim((string) Env::get('OWN_VAR', '/var/lib/ownswitch'), '/') . '/freeswitch/gateways')),
             ];
         })(),
         // Portal / OpenSIPS DNC hot cache (Redis SET). DB index must not collide with CGRateS (usually 10).

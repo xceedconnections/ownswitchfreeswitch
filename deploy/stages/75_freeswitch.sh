@@ -188,14 +188,28 @@ render_template "${TEMPLATE_DIR}/freeswitch/xml_curl.conf.xml.tpl" "${conf}/auto
 render_template "${TEMPLATE_DIR}/freeswitch/xml_cdr.conf.xml.tpl" "${conf}/autoload_configs/xml_cdr.conf.xml" 0640 freeswitch freeswitch
 (( RENDER_CHANGED )) && fs_changed=1
 install -d -m 0750 -o freeswitch -g freeswitch "${FS_PREFIX}/log/xml_cdr"
-# PHP-FPM runs as ownswitch and writes gateway XML. FreeSWITCH (group) must be able to read it.
+# Portal writes gateways under OWN_VAR (PHP open_basedir). Sofia includes them via symlink.
+GW_VAR="${OWN_VAR}/freeswitch/gateways"
+install -d -m 0755 "${OWN_VAR}/freeswitch"
 if id ownswitch >/dev/null 2>&1; then
-  install -d -m 2770 -o ownswitch -g freeswitch "${conf}/sip_profiles/external"
-  chown -R ownswitch:freeswitch "${conf}/sip_profiles/external"
-  find "${conf}/sip_profiles/external" -type f -exec chmod 0660 {} +
+  install -d -m 2770 -o ownswitch -g freeswitch "${GW_VAR}"
+  usermod -aG freeswitch ownswitch 2>/dev/null || true
 else
-  install -d -m 0750 -o freeswitch -g freeswitch "${conf}/sip_profiles/external"
+  install -d -m 0750 -o freeswitch -g freeswitch "${GW_VAR}"
 fi
+# Replace bare directory with symlink if needed (keep any existing xml).
+if [[ -d "${conf}/sip_profiles/external" && ! -L "${conf}/sip_profiles/external" ]]; then
+  shopt -s nullglob
+  for f in "${conf}/sip_profiles/external"/*.xml; do
+    mv -n "$f" "${GW_VAR}/" 2>/dev/null || true
+  done
+  shopt -u nullglob
+  rm -rf "${conf}/sip_profiles/external"
+fi
+ln -sfn "${GW_VAR}" "${conf}/sip_profiles/external"
+chown -h freeswitch:freeswitch "${conf}/sip_profiles/external" 2>/dev/null || true
+chmod 0755 "${OWN_VAR}/freeswitch" 2>/dev/null || true
+
 
 if [[ -f "${OWN_ETC}/ownswitch.env" ]]; then
   upsert_env() {

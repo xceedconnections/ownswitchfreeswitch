@@ -22,6 +22,7 @@ final class FreeswitchProvisioner
         private string $password,
         private string $confDir,
         private string $initError = '',
+        private string $gatewayDirPath = '',
     ) {
     }
 
@@ -31,10 +32,14 @@ final class FreeswitchProvisioner
         $host = trim((string) ($cfg['host'] ?? ''));
         $password = (string) ($cfg['password'] ?? '');
         $conf = rtrim((string) ($cfg['conf_dir'] ?? '/usr/local/freeswitch/conf'), '/');
-        if ($host === '' || $password === '') {
-            return new self('', 8021, '', $conf, 'FREESWITCH_ESL_HOST / FREESWITCH_ESL_PASSWORD are not set');
+        $gw = rtrim((string) ($cfg['gateway_dir'] ?? ''), '/');
+        if ($gw === '') {
+            $gw = '/var/lib/ownswitch/freeswitch/gateways';
         }
-        return new self($host, (int) ($cfg['port'] ?? 8021), $password, $conf, '');
+        if ($host === '' || $password === '') {
+            return new self('', 8021, '', $conf, 'FREESWITCH_ESL_HOST / FREESWITCH_ESL_PASSWORD are not set', $gw);
+        }
+        return new self($host, (int) ($cfg['port'] ?? 8021), $password, $conf, '', $gw);
     }
 
     public function enabled(): bool
@@ -340,63 +345,38 @@ final class FreeswitchProvisioner
     }
 
     /**
-     * Sofia external profile includes external/*.xml as gateways.
-     * Create the directory when missing (common if stage 75 was skipped / partial).
+     * Write gateways under OWN_VAR (inside PHP open_basedir), not under /usr/local/freeswitch.
+     * Deploy links that directory to sip_profiles/external for Sofia includes.
      */
     private function gatewayDir(): string
     {
-        $dir = $this->resolveGatewayDir();
+        $dir = $this->gatewayDirPath !== ''
+            ? $this->gatewayDirPath
+            : '/var/lib/ownswitch/freeswitch/gateways';
+        clearstatcache(true, $dir);
         if (!is_dir($dir)) {
             $parent = dirname($dir);
-            if (!is_dir($parent)) {
-                if (!@mkdir($parent, 02775, true) && !is_dir($parent)) {
-                    throw new \RuntimeException(
-                        'FreeSWITCH sip_profiles missing: ' . $parent
-                        . '. On the server run: sudo bash /opt/ownswitch/app/deploy/fix-fs-gateway-dir.sh'
-                    );
-                }
+            if (!is_dir($parent) && !@mkdir($parent, 02775, true) && !is_dir($parent)) {
+                throw new \RuntimeException(
+                    'Cannot create FreeSWITCH gateway parent: ' . $parent
+                    . '. Run: curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-fs-trunk-sync.sh | sudo bash'
+                );
             }
             if (!@mkdir($dir, 02770, true) && !is_dir($dir)) {
                 throw new \RuntimeException(
-                    'FreeSWITCH gateway directory missing: ' . $dir
-                    . '. On the server run: sudo bash /opt/ownswitch/app/deploy/fix-fs-gateway-dir.sh'
+                    'Cannot create FreeSWITCH gateway directory: ' . $dir
+                    . '. Run: curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-fs-trunk-sync.sh | sudo bash'
                 );
             }
             @chmod($dir, 02770);
         }
         if (!is_writable($dir)) {
             throw new \RuntimeException(
-                'FreeSWITCH gateway directory is not writable: ' . $dir
-                . ' (chown ownswitch:freeswitch and chmod 2770 — or run fix-fs-gateway-dir.sh)'
+                'FreeSWITCH gateway directory not writable by portal: ' . $dir
+                . ' (chown ownswitch:freeswitch, chmod 2770)'
             );
         }
         return $dir;
-    }
-
-    /** Prefer configured conf; fall back to prefix/etc/freeswitch if that is where samples live. */
-    private function resolveGatewayDir(): string
-    {
-        $primary = $this->confDir . '/sip_profiles/external';
-        if (is_dir($primary)) {
-            return $primary;
-        }
-        $altRoot = '';
-        if (str_ends_with($this->confDir, '/conf')) {
-            $altRoot = substr($this->confDir, 0, -5) . '/etc/freeswitch';
-        } elseif (is_dir('/usr/local/freeswitch/etc/freeswitch/sip_profiles')) {
-            $altRoot = '/usr/local/freeswitch/etc/freeswitch';
-        }
-        if ($altRoot !== '') {
-            $alt = $altRoot . '/sip_profiles/external';
-            if (is_dir($alt)) {
-                return $alt;
-            }
-            // Prefer writing under the live profile tree when only sip_profiles exists there.
-            if (is_dir($altRoot . '/sip_profiles') && !is_dir($this->confDir . '/sip_profiles')) {
-                return $alt;
-            }
-        }
-        return $primary;
     }
 
     /** @param array<string,mixed> $trunk */
