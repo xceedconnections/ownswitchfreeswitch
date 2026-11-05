@@ -92,6 +92,11 @@ final class Response
     public function send(): void
     {
         http_response_code($this->status);
+        // Prefer Content-Length over chunked Transfer-Encoding — mod_xml_curl has
+        // historically failed to parse otherwise-valid directory/dialplan documents.
+        if ($this->stream === null && !isset($this->headers['Content-Length'])) {
+            $this->headers['Content-Length'] = (string) strlen($this->body);
+        }
         foreach ($this->headers as $k => $v) {
             header($k . ': ' . str_replace(["\r", "\n"], '', $v));
         }

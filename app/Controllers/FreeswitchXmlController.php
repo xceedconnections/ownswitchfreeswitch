@@ -102,11 +102,13 @@ final class FreeswitchXmlController
             return $this->notFound();
         }
 
-        return '<?xml version="1.0" encoding="UTF-8"?>'
+        // Users directly under <domain> (no groups wrapper) — matches FS xml_curl examples
+        // and avoids parse edge cases. dial-string kept for originate/user/ dialing.
+        return '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
             . '<document type="freeswitch/xml"><section name="directory">'
             . '<domain name="' . $this->x($domain) . '">'
             . '<params><param name="dial-string" value="{presence_id=${dialed_user}@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/></params>'
-            . '<groups><group name="default"><users>' . $usersXml . '</users></group></groups>'
+            . $usersXml
             . '</domain></section></document>';
     }
 

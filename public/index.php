@@ -20,8 +20,14 @@ use Ownswitch\Router;
 $request = Request::fromGlobals();
 App::setRequest($request);
 
+// FreeSWITCH mod_xml_curl/xml_cdr: no session. Set-Cookie / chunked quirks break FS XML parse
+// ("Error Parsing Result") even when the body is valid directory XML.
+$isFsInternal = str_starts_with($request->path, '/internal/fs/');
+
 try {
-    App::session()->start();
+    if (!$isFsInternal) {
+        App::session()->start();
+    }
     $router = new Router(static fn (string $spec) => App::middleware($spec));
     require OWNSWITCH_ROOT . '/app/routes.php';
     $response = $router->dispatch($request);
@@ -40,4 +46,9 @@ try {
     );
 }
 
-$response->withSecurityHeaders()->send();
+if ($isFsInternal) {
+    // Bare XML/text for FreeSWITCH: Content-Length, no cookie/session side effects.
+    $response->send();
+} else {
+    $response->withSecurityHeaders()->send();
+}
