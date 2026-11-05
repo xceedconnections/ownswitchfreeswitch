@@ -101,15 +101,26 @@ final class FreeswitchXmlController
             App::db()
         );
         $bypass = $media === 'direct' ? 'true' : 'false';
+        $dtmf = match (strtolower(trim((string) ($row['dtmfmode'] ?? 'RFC2833')))) {
+            'info' => 'info',
+            'inband' => 'inband',
+            'auto' => '',
+            default => 'rfc2833',
+        };
+        $vars = '<variable name="user_context" value="ownswitch"/>'
+            . '<variable name="os_sip_user" value="' . $this->x($user) . '"/>'
+            . '<variable name="os_media_policy" value="' . $this->x($media) . '"/>'
+            . '<variable name="bypass_media" value="' . $bypass . '"/>';
+        if ($dtmf !== '') {
+            $vars .= '<variable name="dtmf_type" value="' . $this->x($dtmf) . '"/>';
+        }
+        if (strtolower((string) ($row['dtmf_pass'] ?? 'yes')) === 'no') {
+            $vars .= '<variable name="drop_dtmf" value="true"/>';
+        }
         $xmlUser = '<user id="' . $this->x($user) . '">'
             . '<params>' . $params . '<param name="dial-string" value="{presence_id=' . $this->x($user) . '@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/>'
             . '</params>'
-            . '<variables>'
-            . '<variable name="user_context" value="ownswitch"/>'
-            . '<variable name="os_sip_user" value="' . $this->x($user) . '"/>'
-            . '<variable name="os_media_policy" value="' . $this->x($media) . '"/>'
-            . '<variable name="bypass_media" value="' . $bypass . '"/>'
-            . '</variables></user>';
+            . '<variables>' . $vars . '</variables></user>';
         return '<?xml version="1.0" encoding="UTF-8"?>'
             . '<document type="freeswitch/xml"><section name="directory">'
             . '<domain name="' . $this->x($domain) . '">'

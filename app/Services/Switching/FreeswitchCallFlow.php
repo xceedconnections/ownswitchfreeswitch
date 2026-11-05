@@ -132,8 +132,26 @@ final class FreeswitchCallFlow
         $limit = '';
         $maxCh = (int) ($account['max_channels'] ?? 0);
         if ($maxCh > 0) {
-            // Soft concurrent-call guard (requires mod_hash / limit; ignored if module absent).
-            $limit = '<action application="limit" data="hash outbound ' . $this->x($userName) . ' ' . $maxCh . '"/>';
+            // Concurrent-call guard (mod_hash / limit).
+            $limit .= '<action application="limit" data="hash outbound ' . $this->x($userName) . ' ' . $maxCh . '"/>';
+        }
+        $maxCps = (int) ($account['max_cps'] ?? 0);
+        if ($maxCps > 0) {
+            // Calls-per-second: N new calls per 1-second window.
+            $limit .= '<action application="limit" data="hash cps ' . $this->x($userName) . ' ' . $maxCps . '/1"/>';
+        }
+
+        $dtmf = $this->fsDtmfType((string) ($account['dtmfmode'] ?? 'RFC2833'));
+        $dtmfActs = '';
+        if ($dtmf !== '') {
+            $dtmfActs .= '<action application="set" data="dtmf_type=' . $dtmf . '"/>';
+            if ($dtmf === 'inband') {
+                $dtmfActs .= '<action application="start_dtmf"/>';
+            }
+        }
+        if (strtolower((string) ($account['dtmf_pass'] ?? 'yes')) === 'no') {
+            // Absorb keypad digits so they are not forwarded to the B-leg / vendor.
+            $dtmfActs .= '<action application="set" data="drop_dtmf=true"/>';
         }
 
         $record = '';
@@ -155,11 +173,24 @@ final class FreeswitchCallFlow
             . '<action application="set" data="fail_on_single_reject=false"/>'
             . '<action application="set" data="os_sip_user=' . $this->x($userName) . '"/>'
             . '<action application="set" data="os_media_policy=' . $this->x($media) . '"/>'
+            . $dtmfActs
             . $limit
             . $record
             . $cap
             . '<action application="bridge" data="' . $this->x($data) . '"/>'
         );
+    }
+
+    /** Map portal DTMF mode → FreeSWITCH dtmf_type (empty = leave FS default / auto). */
+    private function fsDtmfType(string $mode): string
+    {
+        return match (strtolower(trim($mode))) {
+            'rfc2833', 'rfc-2833', '2833' => 'rfc2833',
+            'info' => 'info',
+            'inband' => 'inband',
+            'auto' => '',
+            default => 'rfc2833',
+        };
     }
 
     public function ingestCdr(string $xml): void

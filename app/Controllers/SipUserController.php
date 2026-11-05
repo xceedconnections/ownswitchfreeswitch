@@ -264,6 +264,18 @@ final class SipUserController extends CrudController
                 'section' => 'Routing & media',
             ],
             [
+                'name' => 'max_cps',
+                'label' => 'CPS',
+                'type' => 'int',
+                'min' => -1,
+                'max' => 1000,
+                'required' => true,
+                'default' => '1',
+                'list' => true,
+                'help' => 'Max new calls per second for this SIP user (FreeSWITCH limit hash … N/1). -1 = unlimited. Typical PBX: 1–10.',
+                'section' => 'Routing & media',
+            ],
+            [
                 'name' => 'max_call_duration',
                 'label' => 'Max call duration (s)',
                 'type' => 'int',
@@ -282,6 +294,24 @@ final class SipUserController extends CrudController
                 'placeholder' => '0.005',
                 'list' => true,
                 'help' => 'Max provider (buy) rate allowed for this user. If the selected trunk costs more than CAP for the dialled prefix, the call is rejected (403 Rate Cap Exceeded). Blank = no CAP. Example: CAP 0.005 blocks vendor 1401@0.009 but allows 1213@0.004.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'dtmfmode',
+                'label' => 'DTMF mode',
+                'type' => 'select',
+                'options' => SipPeerOptions::DTMF,
+                'default' => 'RFC2833',
+                'help' => 'FreeSWITCH dtmf_type: RFC2833 = telephone-event (recommended), INFO = SIP INFO, Inband = audio tones (+ start_dtmf), Auto = FreeSWITCH default.',
+                'section' => 'Routing & media',
+            ],
+            [
+                'name' => 'dtmf_pass',
+                'label' => 'Allow DTMF (press 1)',
+                'type' => 'select',
+                'options' => SipPeerOptions::DTMF_PASS,
+                'default' => 'yes',
+                'help' => 'No = FreeSWITCH drop_dtmf (keypad digits are not passed to the vendor/B-leg). Yes = pass through.',
                 'section' => 'Routing & media',
             ],
 
@@ -498,10 +528,23 @@ final class SipUserController extends CrudController
                 }
             }
         }
-        // CPS is not enforced by FreeSWITCH dialplan; keep DB default / existing value.
-        unset($data['max_cps']);
-        if ($existing === null) {
-            $data['max_cps'] = -1;
+        $dp = strtolower(trim((string) ($data['dtmf_pass'] ?? 'yes')));
+        $data['dtmf_pass'] = $dp === 'no' ? 'no' : 'yes';
+        $dtmf = (string) ($data['dtmfmode'] ?? 'RFC2833');
+        if (!isset(SipPeerOptions::DTMF[$dtmf])) {
+            $dtmf = 'RFC2833';
+        }
+        $data['dtmfmode'] = $dtmf;
+        if (array_key_exists('max_cps', $data)) {
+            $cps = (int) $data['max_cps'];
+            if ($cps < -1) {
+                $cps = -1;
+            }
+            if ($cps > 1000) {
+                $cps = 1000;
+            }
+            // 0 is meaningless for rate limit → treat as 1
+            $data['max_cps'] = $cps === 0 ? 1 : $cps;
         }
         if (array_key_exists('max_call_duration', $data)) {
             $mcd = (int) $data['max_call_duration'];
