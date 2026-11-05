@@ -229,8 +229,15 @@ if systemctl is-active --quiet opensips; then
   fs_changed=1
 fi
 
+# Clear any crash-loop from a previous bad unit (LimitSTACK / ExecStartPre) before start.
+systemctl stop freeswitch 2>/dev/null || true
+systemctl reset-failed freeswitch 2>/dev/null || true
+printf '%s\n' "${FS_PREFIX}/lib" > /etc/ld.so.conf.d/freeswitch.conf
+ldconfig
+
 (( fs_changed )) && note_change "FreeSWITCH configuration updated"
-svc_apply freeswitch "${fs_changed}"
+# Always (re)start after unit/config changes — pass 1 so inactive units are started.
+svc_apply freeswitch 1
 
 # ---------------------------------------------------------------------------
 # 3. Verify ESL is loopback only

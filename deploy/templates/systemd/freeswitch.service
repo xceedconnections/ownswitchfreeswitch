@@ -13,13 +13,16 @@ RuntimeDirectory=freeswitch
 RuntimeDirectoryMode=0750
 Environment=FREESWITCH_PID=/run/freeswitch/freeswitch.pid
 Environment=LD_LIBRARY_PATH=@@FS_PREFIX@@/lib
-ExecStartPre=/bin/mkdir -p @@FS_PREFIX@@/log @@FS_PREFIX@@/db @@FS_PREFIX@@/storage @@FS_PREFIX@@/recordings @@FS_PREFIX@@/sounds
-ExecStartPre=/bin/chown -R freeswitch:freeswitch @@FS_PREFIX@@/log @@FS_PREFIX@@/db @@FS_PREFIX@@/storage @@FS_PREFIX@@/recordings @@FS_PREFIX@@/sounds @@FS_PREFIX@@/conf
+# "+" = run as root (User= above would otherwise own ExecStartPre and break chown on ownswitch gateway XML).
+ExecStartPre=+/bin/mkdir -p @@FS_PREFIX@@/log @@FS_PREFIX@@/db @@FS_PREFIX@@/storage @@FS_PREFIX@@/recordings @@FS_PREFIX@@/sounds
+ExecStartPre=+/bin/chown freeswitch:freeswitch @@FS_PREFIX@@/log @@FS_PREFIX@@/db @@FS_PREFIX@@/storage @@FS_PREFIX@@/recordings @@FS_PREFIX@@/sounds
 ExecStart=@@FS_PREFIX@@/bin/freeswitch -nc -nf -nonat -conf @@FS_PREFIX@@/conf -db @@FS_PREFIX@@/db -log @@FS_PREFIX@@/log -run /run/freeswitch
 ExecReload=/usr/bin/env kill -HUP $MAINPID
 TimeoutStartSec=120
 Restart=on-failure
 RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
 LimitNOFILE=100000
 LimitCORE=infinity
 # Must be large enough for SoftTimer / Sofia threads (240 bytes caused immediate SEGV).
