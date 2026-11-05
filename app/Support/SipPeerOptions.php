@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Ownswitch\Support;
 
 /**
- * Shared SIP peer option lists for Trunks and SIP Users.
- * Labels keep familiar Asterisk names; values map to OpenSIPS-backed behaviour where applicable.
+ * Shared SIP peer option lists for Trunks and SIP Users (FreeSWITCH / Sofia).
  */
 final class SipPeerOptions
 {

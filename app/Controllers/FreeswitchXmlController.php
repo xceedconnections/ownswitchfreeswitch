@@ -9,6 +9,7 @@ use Ownswitch\Http\Request;
 use Ownswitch\Http\Response;
 use Ownswitch\Services\Switching\FreeswitchCallFlow;
 use Ownswitch\Support\Crypto;
+use Ownswitch\Support\MediaPolicy;
 
 /** FreeSWITCH mod_xml_curl + mod_xml_cdr. Loopback nginx only. */
 final class FreeswitchXmlController
@@ -95,7 +96,10 @@ final class FreeswitchXmlController
             }
             $params .= '<param name="a1-hash" value="' . $this->x($ha1) . '"/>';
         }
-        $media = strtolower((string) ($row['media_policy'] ?? 'relay'));
+        $media = MediaPolicy::resolve(
+            isset($row['media_policy']) ? (string) $row['media_policy'] : null,
+            App::db()
+        );
         $bypass = $media === 'direct' ? 'true' : 'false';
         $xmlUser = '<user id="' . $this->x($user) . '">'
             . '<params>' . $params . '<param name="dial-string" value="{presence_id=' . $this->x($user) . '@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/>'
@@ -103,6 +107,7 @@ final class FreeswitchXmlController
             . '<variables>'
             . '<variable name="user_context" value="ownswitch"/>'
             . '<variable name="os_sip_user" value="' . $this->x($user) . '"/>'
+            . '<variable name="os_media_policy" value="' . $this->x($media) . '"/>'
             . '<variable name="bypass_media" value="' . $bypass . '"/>'
             . '</variables></user>';
         return '<?xml version="1.0" encoding="UTF-8"?>'

@@ -22,7 +22,7 @@ final class SipAccountRepository extends BaseRepository
             ],
             'owned',
             ['username', 'caller_id'],
-            ['id', 'username', 'sip_host', 'media_policy', 'max_channels', 'max_cps', 'max_call_duration', 'status', 'created_at']
+            ['id', 'username', 'sip_host', 'media_policy', 'max_channels', 'max_call_duration', 'status', 'created_at']
         );
     }
 

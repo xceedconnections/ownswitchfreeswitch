@@ -29,9 +29,9 @@ final class SettingsService
         'default_media_policy'        => [
             'Default media policy',
             'media',
-            'Relay = RTP through this switch (RTPengine; SDP media IP = your switch). Direct = RTP peer-to-peer (signalling only on switch). Record = relay + record.',
+            'FreeSWITCH: Relay = RTP through this switch (bypass_media=false). Direct = peer-to-peer RTP (bypass_media=true). Record = Relay + record_session to recordings/. Used when a SIP user leaves Media at Default.',
         ],
-        'recording_retention_days'    => ['Recording retention (days)', 'int', ''],
+        'recording_retention_days'    => ['Recording retention (days)', 'int', 'Days to keep FreeSWITCH record_session WAVs under recordings/ (cleanup job).'],
         'switch_logo'                 => ['Switch logo', 'logo', 'PNG/JPG/WEBP/SVG, max 2 MB. Shown in the top navigation for all users.'],
         'switch_name'                 => ['Switch display name', 'text', 'Shown in the portal footer (not the header). Leave blank for “Ownswitch”.'],
     ];

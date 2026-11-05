@@ -203,39 +203,12 @@ final class SipUserController extends CrudController
                 'section' => 'Network',
             ],
             [
-                'name' => 'peer_type',
-                'label' => 'Peer style',
-                'type' => 'select',
-                'options' => SipPeerOptions::PEER_TYPE,
-                'default' => 'friend',
-                'help' => 'friend = softphone (register + call). peer = IP/PBX trunk style. Softphones: friend. IP based defaults to peer.',
-                'section' => 'Network',
-            ],
-            [
-                'name' => 'nat',
-                'label' => 'NAT',
-                'type' => 'select',
-                'options' => SipPeerOptions::NAT,
-                'default' => 'force_rport,comedia',
-                'help' => 'Signalling only (not media IP). Softphones behind NAT: force_rport,comedia. Does not force RTP through this server.',
-                'section' => 'Network',
-            ],
-            [
-                'name' => 'insecure',
-                'label' => 'Insecure',
-                'type' => 'select',
-                'options' => SipPeerOptions::INSECURE,
-                'default' => 'no',
-                'help' => 'port/invite: trust matching address entry (typical for IP-auth PBX). Digest still required when Host=dynamic.',
-                'section' => 'Network',
-            ],
-            [
                 'name' => 'qualify',
                 'label' => 'Qualify',
                 'type' => 'select',
                 'options' => SipPeerOptions::YES_NO,
                 'default' => 'no',
-                'help' => 'Optional OPTIONS latency. Live/Registered follows FreeSWITCH Sofia registrations for Dynamic SIP users. Fixed-IP peers use OPTIONS when Qualify=Yes.',
+                'help' => 'Dynamic users: Live status from FreeSWITCH Sofia REGISTER. IP peers: Yes enables OPTIONS RTT on the list page.',
                 'section' => 'Network',
             ],
 
@@ -263,9 +236,9 @@ final class SipUserController extends CrudController
                 'type' => 'select',
                 'options' => [
                     '' => 'Default (Settings)',
-                    'direct' => 'Direct (no RTPengine)',
-                    'relay' => 'Relay (RTPengine)',
-                    'record' => 'Record (RTPengine + record)',
+                    'direct' => 'Direct (bypass_media — peer RTP)',
+                    'relay' => 'Relay (media via FreeSWITCH)',
+                    'record' => 'Record (relay + record_session)',
                 ],
                 'list_options' => [
                     '' => 'Default',
@@ -275,7 +248,7 @@ final class SipUserController extends CrudController
                 ],
                 'default' => '',
                 'list' => true,
-                'help' => 'Controls media IP. Direct = phone↔carrier (no server in RTP). Relay = RTP via this server (RTPengine). Record = relay + recording. Use Direct if you do not want your server IP in SDP; switch to Relay if you get one-way audio.',
+                'help' => 'FreeSWITCH: Direct = bypass_media (phone↔carrier RTP). Relay = RTP through this switch. Record = Relay + wav under recordings/. Use Direct to keep the switch out of SDP; use Relay if you get one-way audio.',
                 'section' => 'Routing & media',
             ],
             [
@@ -287,19 +260,7 @@ final class SipUserController extends CrudController
                 'required' => true,
                 'default' => '2',
                 'list' => true,
-                'help' => 'Max concurrent calls for this SIP user. -1 = unlimited.',
-                'section' => 'Routing & media',
-            ],
-            [
-                'name' => 'max_cps',
-                'label' => 'CPS',
-                'type' => 'int',
-                'min' => -1,
-                'max' => 1000,
-                'required' => true,
-                'default' => '1',
-                'list' => true,
-                'help' => 'Max calls per second for this SIP user. -1 = unlimited. Typical PBX values: 1–10.',
+                'help' => 'Max concurrent calls for this SIP user (FreeSWITCH limit hash). -1 = unlimited.',
                 'section' => 'Routing & media',
             ],
             [
@@ -310,7 +271,7 @@ final class SipUserController extends CrudController
                 'max' => 604800,
                 'default' => '0',
                 'list' => true,
-                'help' => '0 = use Settings → Prepaid hard max call duration (system default). Or set a custom max in seconds (e.g. 3600 = 1 hour).',
+                'help' => '0 = use Settings → Prepaid hard max call duration (system default). Or set a custom max in seconds (e.g. 3600 = 1 hour). Applied via sched_hangup.',
                 'section' => 'Routing & media',
             ],
             [
@@ -321,44 +282,6 @@ final class SipUserController extends CrudController
                 'placeholder' => '0.005',
                 'list' => true,
                 'help' => 'Max provider (buy) rate allowed for this user. If the selected trunk costs more than CAP for the dialled prefix, the call is rejected (403 Rate Cap Exceeded). Blank = no CAP. Example: CAP 0.005 blocks vendor 1401@0.009 but allows 1213@0.004.',
-                'section' => 'Routing & media',
-            ],
-            [
-                'name' => 'dtmfmode',
-                'label' => 'DTMF mode',
-                'type' => 'select',
-                'options' => SipPeerOptions::DTMF,
-                'default' => 'RFC2833',
-                'help' => 'Signalling style when DTMF is allowed. RFC2833 = telephone-event (recommended).',
-                'section' => 'Routing & media',
-            ],
-            [
-                'name' => 'dtmf_pass',
-                'label' => 'Allow DTMF (press 1)',
-                'type' => 'select',
-                'options' => SipPeerOptions::DTMF_PASS,
-                'default' => 'yes',
-                'help' => 'Block = absorb SIP INFO DTMF / strip telephone-event so keypad digits are not passed to the far end.',
-                'section' => 'Routing & media',
-            ],
-            [
-                'name' => 'codecs',
-                'label' => 'Codecs',
-                'type' => 'multiselect',
-                'options' => SipPeerOptions::CODECS,
-                'default' => 'PCMU,PCMA',
-                'add_label' => '+ Add codec…',
-                'wide' => true,
-                'help' => 'Select one or more codecs (ulaw, alaw, G729, GSM, …). Chips can be removed with ×.',
-                'section' => 'Routing & media',
-            ],
-            [
-                'name' => 'allowtransfer',
-                'label' => 'Allow transfer',
-                'type' => 'select',
-                'options' => SipPeerOptions::YES_NO,
-                'default' => 'no',
-                'help' => 'Permit SIP REFER / attended transfer for this user.',
                 'section' => 'Routing & media',
             ],
 
@@ -486,15 +409,6 @@ final class SipUserController extends CrudController
             $data['ha1b'] = str_repeat('0', 32);
             $data['password_changed_at'] = gmdate('Y-m-d H:i:s');
             $data['_clear_sip_secret'] = true;
-            // IP PBX peers: trust address ACL, no REGISTER
-            if (($prevMode !== 'ip' && (string) ($data['peer_type'] ?? '') === 'friend')
-                || (string) ($data['peer_type'] ?? '') === '') {
-                $data['peer_type'] = 'peer';
-            }
-            if (($prevMode !== 'ip' && (string) ($data['insecure'] ?? 'no') === 'no')
-                || (string) ($data['insecure'] ?? '') === '') {
-                $data['insecure'] = 'port,invite';
-            }
             $pw = null; // ignore any posted password in IP mode
         } else {
             $data['sip_host'] = 'dynamic';
@@ -563,9 +477,6 @@ final class SipUserController extends CrudController
             }
         }
 
-        if (isset($data['codecs']) && is_string($data['codecs']) && $data['codecs'] !== '') {
-            $data['disallow'] = 'all';
-        }
         $cid = trim((string) ($data['caller_id'] ?? ''));
         $data['caller_id'] = $cid !== '' ? $cid : null;
         $cidMode = strtolower(trim((string) ($data['caller_id_mode'] ?? 'passthrough')));
@@ -577,8 +488,6 @@ final class SipUserController extends CrudController
             $cidMode = 'passthrough';
         }
         $data['caller_id_mode'] = $cidMode;
-        $dp = strtolower(trim((string) ($data['dtmf_pass'] ?? 'yes')));
-        $data['dtmf_pass'] = $dp === 'no' ? 'no' : 'yes';
         foreach (['cid_min_len', 'cid_max_len'] as $k) {
             if (!array_key_exists($k, $data) || $data[$k] === '' || $data[$k] === null) {
                 $data[$k] = null;
@@ -589,15 +498,10 @@ final class SipUserController extends CrudController
                 }
             }
         }
-        if (array_key_exists('max_cps', $data)) {
-            $cps = (int) $data['max_cps'];
-            if ($cps < -1) {
-                $cps = -1;
-            }
-            if ($cps > 1000) {
-                $cps = 1000;
-            }
-            $data['max_cps'] = $cps === 0 ? 1 : $cps;
+        // CPS is not enforced by FreeSWITCH dialplan; keep DB default / existing value.
+        unset($data['max_cps']);
+        if ($existing === null) {
+            $data['max_cps'] = -1;
         }
         if (array_key_exists('max_call_duration', $data)) {
             $mcd = (int) $data['max_call_duration'];

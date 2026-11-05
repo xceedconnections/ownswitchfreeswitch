@@ -43,9 +43,9 @@
                 <?php elseif ($type === 'media'): ?>
                     <label class="form-label" for="<?= e($key) ?>"><?= e($label) ?></label>
                     <select class="form-select" id="<?= e($key) ?>" name="<?= e($key) ?>">
-                        <option value="relay"<?= $val === 'relay' ? ' selected' : '' ?>>Relay — media via this switch (RTPengine)</option>
-                        <option value="direct"<?= $val === 'direct' ? ' selected' : '' ?>>Direct — media peer-to-peer (no switch media IP)</option>
-                        <option value="record"<?= $val === 'record' ? ' selected' : '' ?>>Record — relay + call recording</option>
+                        <option value="relay"<?= $val === 'relay' ? ' selected' : '' ?>>Relay — media via FreeSWITCH</option>
+                        <option value="direct"<?= $val === 'direct' ? ' selected' : '' ?>>Direct — peer-to-peer RTP (bypass_media)</option>
+                        <option value="record"<?= $val === 'record' ? ' selected' : '' ?>>Record — relay + record_session</option>
                     </select>
                 <?php else: ?>
                     <label class="form-label" for="<?= e($key) ?>"><?= e($label) ?></label>

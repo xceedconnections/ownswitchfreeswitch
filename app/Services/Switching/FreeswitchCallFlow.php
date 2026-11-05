@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ownswitch\Services\Switching;
 
+use Ownswitch\App;
 use Ownswitch\Http\Request;
 use Ownswitch\Services\Billing\LedgerService;
 use Ownswitch\Services\Billing\PrepaidService;
@@ -13,6 +14,7 @@ use Ownswitch\Services\Billing\RateResolver;
 use Ownswitch\Services\Settings\SettingsService;
 use Ownswitch\Support\Destination;
 use Ownswitch\Support\DstFormat;
+use Ownswitch\Support\MediaPolicy;
 use PDO;
 
 /**
@@ -94,12 +96,24 @@ final class FreeswitchCallFlow
         $trunks = array_slice($trunks, 0, $maxAttempts);
 
         $userFmt = DstFormat::normalize((string) ($account['dst_format'] ?? DstFormat::AS_IS));
-        $media = strtolower((string) ($account['media_policy'] ?? $settings->get('default_media_policy', 'relay') ?? 'relay'));
+        $media = MediaPolicy::resolve(
+            isset($account['media_policy']) ? (string) $account['media_policy'] : null,
+            $this->db
+        );
+        // direct = peer-to-peer RTP (bypass_media); relay/record = media through FreeSWITCH.
         $bypass = $media === 'direct' ? 'true' : 'false';
+        $inboundCid = $this->inboundCallerId($r);
 
         $bridges = [];
         foreach ($trunks as $t) {
-            $bridges[] = $this->bridgeLeg($account, $t, $dest, $userFmt);
+            $cidNum = $this->outboundCallerId($account, $t, $inboundCid);
+            if ($this->callerIdLengthReject($account, $t, $cidNum)) {
+                continue; // try next trunk / reject if none remain
+            }
+            $bridges[] = $this->bridgeLeg($account, $t, $dest, $userFmt, $cidNum);
+        }
+        if ($bridges === []) {
+            return $this->reject('484', 'CALL_REJECTED');
         }
         $data = implode('|', $bridges);
         $userName = (string) $account['username'];
@@ -122,6 +136,16 @@ final class FreeswitchCallFlow
             $limit = '<action application="limit" data="hash outbound ' . $this->x($userName) . ' ' . $maxCh . '"/>';
         }
 
+        $record = '';
+        if ($media === 'record') {
+            $recDir = rtrim((string) App::config('app.recordings_dir', ''), '/\\');
+            if ($recDir === '') {
+                $recDir = '/usr/local/freeswitch/recordings';
+            }
+            $record = '<action application="set" data="RECORD_STEREO=true"/>'
+                . '<action application="record_session" data="' . $this->x($recDir) . '/${uuid}.wav"/>';
+        }
+
         return $this->extension(
             'outbound',
             '.*',
@@ -130,7 +154,9 @@ final class FreeswitchCallFlow
             . '<action application="set" data="continue_on_fail=' . $this->x($failCodes) . '"/>'
             . '<action application="set" data="fail_on_single_reject=false"/>'
             . '<action application="set" data="os_sip_user=' . $this->x($userName) . '"/>'
+            . '<action application="set" data="os_media_policy=' . $this->x($media) . '"/>'
             . $limit
+            . $record
             . $cap
             . '<action application="bridge" data="' . $this->x($data) . '"/>'
         );
@@ -177,6 +203,10 @@ final class FreeswitchCallFlow
             new SettingsService($this->db),
             new \Ownswitch\Repositories\CdrRepository($this->db),
         );
+        $mediaPol = strtolower(trim((string) ($vars['os_media_policy'] ?? '')));
+        if (!in_array($mediaPol, MediaPolicy::CHOICES, true)) {
+            $mediaPol = '';
+        }
         $svc->ingest([
             'external_cdr_key' => $uuid !== '' ? $uuid : md5($xml),
             'uuid' => $uuid,
@@ -189,11 +219,14 @@ final class FreeswitchCallFlow
             'duration' => (string) max(0, $bill),
             'carrier_trunk_id' => $trunkId,
             'source_ip' => (string) ($vars['sip_network_ip'] ?? ''),
+            'media_policy_requested' => $mediaPol !== '' ? $mediaPol : null,
+            'media_policy_actual' => $mediaPol !== '' ? $mediaPol : null,
+            'recording_status' => $mediaPol === 'record' ? 'pending' : null,
         ], 'freeswitch');
     }
 
     /** @param array<string,mixed> $account @param array<string,mixed> $trunk */
-    private function bridgeLeg(array $account, array $trunk, string $destDigits, string $userFmt): string
+    private function bridgeLeg(array $account, array $trunk, string $destDigits, string $userFmt, string $cidNum): string
     {
         $tid = (int) $trunk['id'];
         $dial = $this->applyDstFormat($destDigits, $userFmt);
@@ -201,26 +234,24 @@ final class FreeswitchCallFlow
         if ($trunkFmt !== DstFormat::AS_IS) {
             $dial = $this->applyDstFormat(Destination::normalize($dial), $trunkFmt);
         }
-        $remove = (string) ($trunk['remove_prefix'] ?? '');
-        if ($remove !== '' && str_starts_with($dial, $remove)) {
-            $dial = substr($dial, strlen($remove));
-        }
+        $dial = $this->stripTechPrefixes($dial, (string) ($trunk['remove_prefix'] ?? ''));
         $add = (string) ($trunk['add_prefix'] ?? '');
         if ($add !== '') {
             $dial = $add . $dial;
         }
 
-        $cidNum = $this->outboundCallerId($account, $trunk);
         $fromUser = trim((string) ($trunk['from_user'] ?? ''));
         $fromDomain = trim((string) ($trunk['from_domain'] ?? ''));
         $vars = [];
-        if ($cidNum !== '') {
-            $vars[] = 'origination_caller_id_number=' . $cidNum;
-            $vars[] = 'origination_caller_id_name=' . $cidNum;
+        // Trunk From user wins for SIP From; otherwise use rewritten CLI when known.
+        $effectiveCid = $fromUser !== '' ? $fromUser : $cidNum;
+        if ($effectiveCid !== '') {
+            $vars[] = 'origination_caller_id_number=' . $effectiveCid;
+            $vars[] = 'origination_caller_id_name=' . $effectiveCid;
+            $vars[] = 'effective_caller_id_number=' . $effectiveCid;
         }
         if ($fromUser !== '') {
             $vars[] = 'sip_invite_from_user=' . $fromUser;
-            $vars[] = 'effective_caller_id_number=' . $fromUser;
         }
         if ($fromDomain !== '') {
             $vars[] = 'sip_invite_from_domain=' . $fromDomain;
@@ -233,19 +264,109 @@ final class FreeswitchCallFlow
         return $prefix . 'sofia/gateway/gw-' . $tid . '/' . $dial;
     }
 
-    /** @param array<string,mixed> $account @param array<string,mixed> $trunk */
-    private function outboundCallerId(array $account, array $trunk): string
+    /**
+     * Resolve outbound CallerID digits before trunk From-user override.
+     *
+     * @param array<string,mixed> $account
+     * @param array<string,mixed> $trunk
+     * @param array{number:string,name:string} $inbound
+     */
+    private function outboundCallerId(array $account, array $trunk, array $inbound): string
     {
-        $mode = strtolower((string) ($account['caller_id_mode'] ?? 'as_is'));
-        $cid = trim((string) ($account['caller_id'] ?? ''));
-        if ($mode === 'force' && $cid !== '') {
-            return preg_replace('/[^\d+]/', '', $cid) ?? $cid;
+        $mode = strtolower(trim((string) ($account['caller_id_mode'] ?? 'passthrough')));
+        $portalCid = $this->digitsOnly(trim((string) ($account['caller_id'] ?? '')));
+
+        $cid = match ($mode) {
+            'fixed' => $portalCid,
+            'display_name' => $this->digitsOnly($inbound['name'] !== '' ? $inbound['name'] : $inbound['number']),
+            default => $inbound['number'] !== '' ? $inbound['number'] : $portalCid, // passthrough
+        };
+
+        $rem = trim((string) ($trunk['cid_remove_prefix'] ?? ''));
+        if ($rem !== '' && $cid !== '' && str_starts_with($cid, $rem)) {
+            $cid = substr($cid, strlen($rem));
         }
-        if ($cid !== '') {
-            return preg_replace('/[^\d+]/', '', $cid) ?? $cid;
+        $add = trim((string) ($trunk['cid_add_prefix'] ?? ''));
+        if ($add !== '' && $cid !== '') {
+            $cid = $add . $cid;
         }
-        $from = trim((string) ($trunk['from_user'] ?? ''));
-        return $from !== '' ? $from : '';
+
+        return $cid;
+    }
+
+    /** @param array{number:string,name:string} */
+    private function inboundCallerId(Request $r): array
+    {
+        $number = '';
+        foreach ([
+            'Caller-Caller-ID-Number',
+            'variable_sip_from_user',
+            'Caller-Username',
+            'variable_effective_caller_id_number',
+        ] as $k) {
+            $v = $this->digitsOnly(trim((string) $r->input($k, '')));
+            if ($v !== '') {
+                $number = $v;
+                break;
+            }
+        }
+        $name = trim((string) $r->input('Caller-Caller-ID-Name', $r->input('variable_sip_from_display', '')));
+        return ['number' => $number, 'name' => $name];
+    }
+
+    private function digitsOnly(string $raw): string
+    {
+        if ($raw === '') {
+            return '';
+        }
+        $plus = str_starts_with($raw, '+');
+        $d = preg_replace('/\D+/', '', $raw) ?? '';
+        return $plus && $d !== '' ? '+' . $d : $d;
+    }
+
+    /** Comma/space-separated tech prefixes; longest match wins (same as RouteSimulator). */
+    private function stripTechPrefixes(string $dial, string $rawRem): string
+    {
+        $remList = [];
+        foreach (preg_split('/[\s,;|]+/', $rawRem) ?: [] as $p) {
+            $p = preg_replace('/\D+/', '', $p) ?? '';
+            if ($p !== '') {
+                $remList[] = $p;
+            }
+        }
+        usort($remList, static fn ($a, $b) => strlen($b) <=> strlen($a));
+        foreach ($remList as $rem) {
+            if ($rem !== '' && str_starts_with($dial, $rem)) {
+                return substr($dial, strlen($rem));
+            }
+        }
+        return $dial;
+    }
+
+    /** @param array<string,mixed> $account @param array<string,mixed> $trunk */
+    private function callerIdLengthReject(array $account, array $trunk, string $cidNum): bool
+    {
+        // When trunk From user forces CLI, validate that value; else validate rewritten CLI.
+        $fromUser = trim((string) ($trunk['from_user'] ?? ''));
+        $check = $this->digitsOnly($fromUser !== '' ? $fromUser : $cidNum);
+        if ($check === '') {
+            // Passthrough with no digits yet — skip length gates (vendor may still reject).
+            return false;
+        }
+        $len = strlen(ltrim($check, '+'));
+        foreach ([$account, $trunk] as $src) {
+            $min = isset($src['cid_min_len']) && $src['cid_min_len'] !== '' && $src['cid_min_len'] !== null
+                ? (int) $src['cid_min_len'] : 0;
+            $max = isset($src['cid_max_len']) && $src['cid_max_len'] !== '' && $src['cid_max_len'] !== null
+                ? (int) $src['cid_max_len'] : 0;
+            if ($min > 0 && $len < $min) {
+                return true;
+            }
+            if ($max > 0 && $len > $max) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function applyDstFormat(string $digits, string $format): string
