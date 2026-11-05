@@ -88,7 +88,7 @@ final class CarrierController extends CrudController
             ['name' => 'rate_cap', 'label' => 'CAP (max buy $/min)', 'type' => 'number', 'min' => 0, 'placeholder' => '0.008', 'list' => true, 'help' => 'Compared to this provider’s buy rate for the dialled prefix — independent of SIP user CAP. Example: CAP 0.008 allows buy 1213@0.005, skips this trunk for 1456@0.009 (try next trunk). Blank = no CAP.'],
             ['name' => 'dnc_group_id', 'label' => 'DNC group', 'type' => 'select', 'options' => $this->dncGroupOptions(), 'list' => true, 'help' => 'Instant 403 before the vendor is INVITEd when the dialled number is on this list. Prefer also assigning the same group on the SIP user for a pre-routing block. Leave blank for no trunk DNC.'],
             ['name' => 'dst_format', 'label' => 'Destination format', 'type' => 'select', 'options' => DstFormat::OPTIONS, 'default' => DstFormat::AS_IS, 'list' => true, 'help' => 'How the dialled number is sent to this vendor after strip/add prefix. Applied after the SIP user’s Destination format. Example: E.164 with + turns 12135550123 into +12135550123.'],
-            ['name' => 'latency_ms', 'label' => 'Latency', 'list' => true, 'list_only' => true],
+            ['name' => 'latency_ms', 'label' => 'Reg / Latency', 'list' => true, 'list_only' => true],
             $status,
         ];
     }
@@ -108,6 +108,8 @@ final class CarrierController extends CrudController
         if ($this->kind !== 'trunk' || $rows === []) {
             return $rows;
         }
+        $prov = FreeswitchProvisioner::fromConfig();
+        $fsOk = $prov->enabled();
         foreach ($rows as &$row) {
             if (($row['dnc_group_id'] ?? null) === null || $row['dnc_group_id'] === '') {
                 $row['dnc_group_id'] = '';
@@ -117,18 +119,25 @@ final class CarrierController extends CrudController
             $host = (string) ($row['host'] ?? '');
             $port = (int) ($row['port'] ?? 5060);
             $active = ($row['status'] ?? '') === 'active';
-            $qualify = strtolower((string) ($row['qualify'] ?? 'yes')) === 'yes';
-            $ms = null;
-            if ($active && $qualify && $host !== '') {
-                $ms = SipOptionsProbe::rttMs($host, $port);
-            }
+            $mode = strtolower((string) ($row['auth_mode'] ?? 'ip'));
             if (!$active || $host === '') {
                 $row['latency_ms'] = '—';
-            } elseif (!$qualify) {
-                $row['latency_ms'] = '—';
-            } else {
-                $row['latency_ms'] = ($ms !== null) ? $ms : 'n/a';
+                continue;
             }
+            // REGISTER trunks: show Sofia gateway state (REGED / FAIL_WAIT / …).
+            if ($mode === 'register' && $fsOk) {
+                $st = $prov->gatewayStatus((int) ($row['id'] ?? 0));
+                $row['latency_ms'] = $st['label'];
+                $row['register_status'] = $st['state'];
+                continue;
+            }
+            $qualify = strtolower((string) ($row['qualify'] ?? 'yes')) === 'yes';
+            if (!$qualify) {
+                $row['latency_ms'] = '—';
+                continue;
+            }
+            $ms = SipOptionsProbe::rttMs($host, $port);
+            $row['latency_ms'] = ($ms !== null) ? $ms : 'n/a';
         }
         unset($row);
         return $rows;
@@ -236,6 +245,13 @@ final class CarrierController extends CrudController
             $sync = (new OpensipsRoutingSync($this->db(), $prov))->syncAll();
             if ($sync['warnings'] !== []) {
                 App::session()->flash('warning', 'Trunk saved with warnings: ' . mb_substr(implode(' | ', $sync['warnings']), 0, 300));
+            }
+            $mode = strtolower((string) ($row['auth_mode'] ?? ($data['auth_mode'] ?? 'ip')));
+            if ($mode === 'register') {
+                $st = $prov->gatewayStatus($id);
+                return 'Trunk pushed to FreeSWITCH. REGISTER state: '
+                    . ($st['label'] !== '' ? $st['label'] : 'pending')
+                    . ' (REGED = registered to vendor).';
             }
             return 'Trunk pushed to FreeSWITCH (Sofia gateway). Routes stay in the portal.';
         } catch (\Throwable $e) {

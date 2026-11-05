@@ -158,7 +158,8 @@ final class FreeswitchProvisioner
             throw new \RuntimeException('Cannot write ' . $path);
         }
         @chmod($path, 0660);
-        $this->rescan();
+        // New/changed gateways need killgw + reloadxml + rescan (rescan alone often keeps old params).
+        $this->reloadGateway($id);
     }
 
     public function removeTrunk(int $trunkId): void
@@ -171,7 +172,68 @@ final class FreeswitchProvisioner
             $this->esl()->api('sofia profile external killgw gw-' . $trunkId);
         } catch (\Throwable) {
         }
+        try {
+            $this->esl()->api('reloadxml');
+        } catch (\Throwable) {
+        }
         $this->rescan();
+    }
+
+    /**
+     * Sofia outbound REGISTER / gateway state for portal trunk list.
+     *
+     * @return array{state:string,status:string,label:string}
+     */
+    public function gatewayStatus(int $trunkId): array
+    {
+        $name = 'gw-' . $trunkId;
+        $empty = ['state' => '', 'status' => '', 'label' => 'n/a'];
+        if (!$this->enabled() || $trunkId <= 0) {
+            return $empty;
+        }
+        try {
+            $body = $this->esl()->api('sofia status gateway ' . $name);
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] sofia gateway status: ' . $e->getMessage());
+            return ['state' => '', 'status' => '', 'label' => 'err'];
+        }
+        if ($body === '' || stripos($body, 'Invalid Gateway') !== false || stripos($body, 'not found') !== false) {
+            return ['state' => 'NOGW', 'status' => '', 'label' => 'not loaded'];
+        }
+        $state = '';
+        $status = '';
+        if (preg_match('/^\s*State\s+(\S+)/mi', $body, $m)) {
+            $state = strtoupper(trim($m[1]));
+        }
+        if (preg_match('/^\s*Status\s+(\S+)/mi', $body, $m)) {
+            $status = strtoupper(trim($m[1]));
+        }
+        $label = $state !== '' ? $state : ($status !== '' ? $status : 'unknown');
+        // REGED = registered; NOREG = IP peer (no register); FAIL_WAIT / UNREGED = problem
+        return ['state' => $state, 'status' => $status, 'label' => $label];
+    }
+
+    private function reloadGateway(int $trunkId): void
+    {
+        $name = 'gw-' . $trunkId;
+        try {
+            $this->esl()->api('sofia profile external killgw ' . $name);
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] killgw ' . $name . ': ' . $e->getMessage());
+        }
+        try {
+            $this->esl()->api('reloadxml');
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] reloadxml: ' . $e->getMessage());
+        }
+        // Brief pause so Sofia finishes deleting the old gateway before rescan.
+        usleep(250000);
+        $this->rescan();
+        try {
+            // Force REGISTER attempt for register=true gateways.
+            $this->esl()->api('sofia profile external register ' . $name);
+        } catch (\Throwable) {
+        }
     }
 
     /**
@@ -384,6 +446,9 @@ final class FreeswitchProvisioner
     {
         $id = (int) $trunk['id'];
         $host = trim((string) ($trunk['host'] ?? ''));
+        if ($host === '') {
+            throw new \RuntimeException('Trunk host is required for FreeSWITCH gateway');
+        }
         $port = (int) ($trunk['port'] ?? 5060);
         if ($port <= 0) {
             $port = 5060;
@@ -394,43 +459,63 @@ final class FreeswitchProvisioner
             $transport = 'udp';
         }
         $mode = strtolower((string) ($trunk['auth_mode'] ?? 'ip'));
-        // register = REGISTER to carrier; invite = auth on outbound INVITE only; ip = no auth.
+        // register = Sofia REGISTER to vendor (Magnus/Asterisk); invite = digest on INVITE only; ip = no auth.
         $register = $mode === 'register' ? 'true' : 'false';
         $user = trim((string) ($trunk['auth_username'] ?? ''));
-        $fromUser = trim((string) ($trunk['from_user'] ?? ''));
-        if ($fromUser === '') {
-            $fromUser = $user;
-        }
+        $fromDomain = trim((string) ($trunk['from_domain'] ?? ''));
+        $realm = $fromDomain !== '' ? $fromDomain : $host;
         $pass = '';
         if (!empty($trunk['auth_secret_enc'])) {
             try {
                 $pass = Crypto::decrypt((string) $trunk['auth_secret_enc']);
-            } catch (\Throwable) {
-                $pass = '';
+            } catch (\Throwable $e) {
+                throw new \RuntimeException('Cannot decrypt trunk password: ' . $e->getMessage());
             }
         }
+        if (in_array($mode, ['register', 'invite'], true)) {
+            if ($user === '') {
+                throw new \RuntimeException('Auth username is required for REGISTER / Invite digest trunks');
+            }
+            if ($pass === '') {
+                throw new \RuntimeException('Auth password is required for REGISTER / Invite digest trunks');
+            }
+        }
+
+        // REGISTER identity must match username for Asterisk/Magnus. Portal "From user" is applied on INVITE in dialplan.
+        $gwFromUser = $user;
+        if ($mode !== 'register') {
+            $explicitFrom = trim((string) ($trunk['from_user'] ?? ''));
+            if ($explicitFrom !== '') {
+                $gwFromUser = $explicitFrom;
+            }
+        }
+
         $ping = ((string) ($trunk['qualify'] ?? 'yes') === 'no') ? '0' : '30';
-        $params = '<param name="realm" value="' . $this->x($host) . '"/>'
+        $params = '<param name="realm" value="' . $this->x($realm) . '"/>'
             . '<param name="proxy" value="' . $this->x($proxy) . '"/>'
+            . '<param name="register-proxy" value="' . $this->x($proxy) . '"/>'
             . '<param name="register" value="' . $register . '"/>'
             . '<param name="register-transport" value="' . $this->x($transport) . '"/>'
             . '<param name="retry-seconds" value="30"/>'
-            . '<param name="expire-seconds" value="600"/>'
+            . '<param name="expire-seconds" value="3600"/>'
             . '<param name="caller-id-in-from" value="true"/>'
             . '<param name="ping" value="' . $ping . '"/>';
+
         if ($user !== '' && in_array($mode, ['register', 'invite'], true)) {
-            $params .= '<param name="username" value="' . $this->x($user) . '"/>';
+            $params .= '<param name="username" value="' . $this->x($user) . '"/>'
+                . '<param name="password" value="' . $this->x($pass) . '"/>'
+                . '<param name="extension" value="' . $this->x($user) . '"/>'
+                . '<param name="extension-in-contact" value="true"/>';
         }
-        if ($fromUser !== '') {
-            $params .= '<param name="from-user" value="' . $this->x($fromUser) . '"/>';
+        if ($gwFromUser !== '') {
+            $params .= '<param name="from-user" value="' . $this->x($gwFromUser) . '"/>';
         }
-        $fromDomain = trim((string) ($trunk['from_domain'] ?? ''));
         if ($fromDomain !== '') {
             $params .= '<param name="from-domain" value="' . $this->x($fromDomain) . '"/>';
+        } elseif ($mode === 'register') {
+            $params .= '<param name="from-domain" value="' . $this->x($host) . '"/>';
         }
-        if ($pass !== '' && in_array($mode, ['register', 'invite'], true)) {
-            $params .= '<param name="password" value="' . $this->x($pass) . '"/>';
-        }
+
         return '<include><gateway name="gw-' . $id . '">' . $params . '</gateway></include>' . "\n";
     }
 
