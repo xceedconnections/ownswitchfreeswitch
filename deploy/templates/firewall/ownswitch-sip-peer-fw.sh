@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Manage per-SIP-user firewall allow rules for IP-based peers (firewalld or ufw).
 # Usage:
-#   ownswitch-sip-peer-fw sync <username> <ip> <peer_port>
+#   ownswitch-sip-peer-fw sync <username> <ip[,ip2,...]> <peer_port>
 #   ownswitch-sip-peer-fw remove <username>
 #   ownswitch-sip-peer-fw list
 set -euo pipefail
@@ -21,6 +21,19 @@ safe_ip() {
   local ip="${1:-}"
   [[ "$ip" =~ ^[0-9a-fA-F:.]+$ ]] || die "invalid ip"
   echo "$ip"
+}
+
+# Comma-separated IPs → validated list (space-separated for loops)
+safe_ips() {
+  local raw="${1:-}" out=() one
+  IFS=',' read -r -a parts <<< "$raw"
+  for one in "${parts[@]}"; do
+    one="$(echo "$one" | tr -d '[:space:]')"
+    [[ -n "$one" ]] || continue
+    out+=("$(safe_ip "$one")")
+  done
+  ((${#out[@]} > 0)) || die "invalid ip list"
+  echo "${out[*]}"
 }
 
 safe_port() {
@@ -48,7 +61,7 @@ state_file() { echo "$STATE_DIR/$(safe_user "$1").env"; }
 read_state() {
   local f
   f="$(state_file "$1")"
-  IP=""; PORTS=""
+  IP=""; IPS=""; PORTS=""
   [[ -f "$f" ]] || return 1
   # shellcheck disable=SC1090
   source "$f"
@@ -56,11 +69,14 @@ read_state() {
 }
 
 write_state() {
-  local user="$1" ip="$2" ports="$3"
+  local user="$1" ips="$2" ports="$3"
   local f
   f="$(state_file "$user")"
+  # IPS= comma list; IP= first (legacy)
+  local first="${ips%%,*}"
   cat >"$f" <<EOF
-IP=${ip}
+IP=${first}
+IPS=${ips}
 PORTS=${ports}
 EOF
   chmod 0640 "$f" 2>/dev/null || true
@@ -96,33 +112,40 @@ fw_add_rule() {
 
 fw_remove_user() {
   local user="$1"
-  local ip ports p
+  local ip p ips
   read_state "$user" || return 0
-  for p in ${PORTS//,/ }; do
-    [[ -n "$p" ]] || continue
-    fw_remove_rule "$ip" "$p" udp
-    fw_remove_rule "$ip" "$p" tcp
+  ips="${IPS:-$IP}"
+  for ip in ${ips//,/ }; do
+    [[ -n "$ip" ]] || continue
+    for p in ${PORTS//,/ }; do
+      [[ -n "$p" ]] || continue
+      fw_remove_rule "$ip" "$p" udp
+      fw_remove_rule "$ip" "$p" tcp
+    done
   done
   clear_state "$user"
 }
 
 fw_sync_user() {
-  local user="$1" ip="$2" peer_port="$3"
-  local ports=() p
+  local user="$1" ip_list="$2" peer_port="$3"
+  local ports=() p ip ips_csv
   fw_remove_user "$user"
   ports+=("$SIP_LISTEN")
   if [[ "$peer_port" != "0" && "$peer_port" != "$SIP_LISTEN" ]]; then
     ports+=("$peer_port")
   fi
-  for p in "${ports[@]}"; do
-    fw_add_rule "$ip" "$p" udp
-    fw_add_rule "$ip" "$p" tcp
+  for ip in $ip_list; do
+    for p in "${ports[@]}"; do
+      fw_add_rule "$ip" "$p" udp
+      fw_add_rule "$ip" "$p" tcp
+    done
   done
   firewall-cmd --reload >/dev/null 2>&1 || true
   local joined
   joined=$(IFS=,; echo "${ports[*]}")
-  write_state "$user" "$ip" "$joined"
-  echo "OK firewalld sync user=${user} ip=${ip} ports=${joined}"
+  ips_csv=$(echo "$ip_list" | tr ' ' ',')
+  write_state "$user" "$ips_csv" "$joined"
+  echo "OK firewalld sync user=${user} ips=${ips_csv} ports=${joined}"
 }
 
 # --- ufw ---
@@ -145,33 +168,36 @@ ufw_remove_user() {
 }
 
 ufw_sync_user() {
-  local user="$1" ip="$2" peer_port="$3"
+  local user="$1" ip_list="$2" peer_port="$3"
   local comment="ownswitch-peer:${user}"
-  local ports=() p
+  local ports=() p ip ips_csv
   ufw_remove_user "$user"
   ports+=("$SIP_LISTEN")
   if [[ "$peer_port" != "0" && "$peer_port" != "$SIP_LISTEN" ]]; then
     ports+=("$peer_port")
   fi
-  for p in "${ports[@]}"; do
-    ufw allow from "$ip" to any port "$p" proto udp comment "$comment" >/dev/null 2>&1 || true
-    ufw allow from "$ip" to any port "$p" proto tcp comment "$comment" >/dev/null 2>&1 || true
+  for ip in $ip_list; do
+    for p in "${ports[@]}"; do
+      ufw allow from "$ip" to any port "$p" proto udp comment "$comment" >/dev/null 2>&1 || true
+      ufw allow from "$ip" to any port "$p" proto tcp comment "$comment" >/dev/null 2>&1 || true
+    done
   done
   local joined
   joined=$(IFS=,; echo "${ports[*]}")
-  write_state "$user" "$ip" "$joined"
-  echo "OK ufw sync user=${user} ip=${ip} ports=${joined}"
+  ips_csv=$(echo "$ip_list" | tr ' ' ',')
+  write_state "$user" "$ips_csv" "$joined"
+  echo "OK ufw sync user=${user} ips=${ips_csv} ports=${joined}"
 }
 
 cmd_sync() {
-  local user ip peer_port be
+  local user ip_list peer_port be
   user="$(safe_user "${1:-}")"
-  ip="$(safe_ip "${2:-}")"
+  ip_list="$(safe_ips "${2:-}")"
   peer_port="$(safe_port "${3:-0}")"
   be="$(backend)"
   case "$be" in
-    firewalld) fw_sync_user "$user" "$ip" "$peer_port" ;;
-    ufw)       ufw_sync_user "$user" "$ip" "$peer_port" ;;
+    firewalld) fw_sync_user "$user" "$ip_list" "$peer_port" ;;
+    ufw)       ufw_sync_user "$user" "$ip_list" "$peer_port" ;;
     *) die "no firewalld/ufw backend" ;;
   esac
 }
@@ -196,7 +222,7 @@ cmd_list() {
     base="$(basename "$f" .env)"
     # shellcheck disable=SC1090
     source "$f"
-    echo "user=${base} ip=${IP:-} ports=${PORTS:-}"
+    echo "user=${base} ips=${IPS:-${IP:-}} ports=${PORTS:-}"
   done
 }
 

@@ -23,15 +23,33 @@ final class SipPeerFirewallService
      */
     public function sync(string $username, string $ip, int $peerPort): array
     {
+        return $this->syncMany($username, [$ip], $peerPort);
+    }
+
+    /**
+     * Allow multiple peer IPs for one SIP username.
+     *
+     * @param list<string> $ips
+     * @return array{ok:bool,detail:string}
+     */
+    public function syncMany(string $username, array $ips, int $peerPort): array
+    {
         $username = trim($username);
-        $ip = trim($ip);
-        if ($username === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
-            return ['ok' => false, 'detail' => 'Invalid username or IP'];
+        $clean = [];
+        foreach ($ips as $ip) {
+            $ip = trim((string) $ip);
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                $clean[] = $ip;
+            }
+        }
+        $clean = array_values(array_unique($clean));
+        if ($username === '' || $clean === []) {
+            return ['ok' => false, 'detail' => 'Invalid username or IP list'];
         }
         if ($peerPort < 0 || $peerPort > 65535) {
             $peerPort = 5060;
         }
-        return $this->run(['sync', $username, $ip, (string) $peerPort]);
+        return $this->run(['sync', $username, implode(',', $clean), (string) $peerPort]);
     }
 
     /** @return array{ok:bool,detail:string} */

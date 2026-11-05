@@ -465,13 +465,17 @@
                     hostEl.placeholder = 'dynamic';
                 } else if (String(hostEl.value).toLowerCase() === 'dynamic') {
                     hostEl.value = '';
-                    hostEl.placeholder = 'e.g. 192.131.111.144';
+                    hostEl.placeholder = 'One IP per line\n192.0.2.10\n203.0.113.20';
                 }
             }
             if (hostWrap) {
                 var label = hostWrap.querySelector('label');
-                if (label && ip) {
-                    /* keep label */
+                if (label) {
+                    label.textContent = ip ? 'Allowed IP(s)' : 'Allowed IP(s)';
+                }
+                var help = hostWrap.querySelector('.form-text');
+                if (help && ip) {
+                    help.textContent = 'One IPv4/IPv6 per line (or commas). All listed IPs are authorized for this SIP user.';
                 }
             }
             if (portEl) {

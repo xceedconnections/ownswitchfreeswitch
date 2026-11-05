@@ -14,6 +14,7 @@ use Ownswitch\Services\Sip\SipOptionsProbe;
 use Ownswitch\Support\Crypto;
 use Ownswitch\Support\DstFormat;
 use Ownswitch\Support\MediaPolicy;
+use Ownswitch\Support\SipHosts;
 use Ownswitch\Support\SipPeerOptions;
 
 /**
@@ -113,10 +114,14 @@ final class SipUserController extends CrudController
             ],
             [
                 'name' => 'sip_host',
-                'label' => 'Host',
-                'max' => 190,
+                'label' => 'Allowed IP(s)',
+                'type' => 'textarea',
+                'rows' => 3,
+                'max' => 1000,
                 'default' => 'dynamic',
-                'help' => 'Dynamic mode uses “dynamic” (REGISTER from any IP). IP based: enter the PBX IP (e.g. ViciDial) — matched by source IP in FreeSWITCH dialplan + firewall auto-update.',
+                'wide' => true,
+                'help' => 'Dynamic: leave as “dynamic”. IP based: one IPv4/IPv6 per line (or comma-separated). All listed IPs are authorized for this SIP user (FreeSWITCH cidr + dialplan + firewall).',
+                'placeholder' => "192.0.2.10\n203.0.113.20",
                 'section' => 'Account',
             ],
             [
@@ -265,14 +270,14 @@ final class SipUserController extends CrudController
             ],
             [
                 'name' => 'max_cps',
-                'label' => 'CPS',
+                'label' => 'CPS (calls/sec)',
                 'type' => 'int',
                 'min' => -1,
                 'max' => 1000,
                 'required' => true,
                 'default' => '1',
                 'list' => true,
-                'help' => 'Max new calls per second for this SIP user (FreeSWITCH limit hash … N/1). -1 = unlimited. Typical PBX: 1–10.',
+                'help' => 'Max new calls per second (FreeSWITCH limit hash cps user N/1). -1 = unlimited. Typical PBX: 1–10. 0 is treated as 1.',
                 'section' => 'Routing & media',
             ],
             [
@@ -357,10 +362,15 @@ final class SipUserController extends CrudController
                     }
                 }
             }
-            $host = trim((string) ($row['sip_host'] ?? 'dynamic'));
+            $hostRaw = (string) ($row['sip_host'] ?? 'dynamic');
+            $peerIps = SipHosts::parse($hostRaw);
             $port = (int) ($row['sip_port'] ?? 5060);
             if ($port <= 0) {
                 $port = 5060;
+            }
+            // List column: show first IP or +N more
+            if ($peerIps !== []) {
+                $row['sip_host'] = $peerIps[0] . (count($peerIps) > 1 ? ' +' . (count($peerIps) - 1) : '');
             }
 
             $online = false;
@@ -373,18 +383,17 @@ final class SipUserController extends CrudController
                 }
             }
 
-            $isDynamic = $host === '' || strtolower($host) === 'dynamic';
+            $isDynamic = $peerIps === [];
             if ($reg !== null) {
-                // OpenSIPS location/MI with future expires = registered.
-                // Live ms is the proxy's own SIP OPTIONS ping (nathelper), in milliseconds.
+                // Sofia REGISTER = live for Dynamic users.
                 $online = true;
                 $fromOs = (int) ($reg['latency_ms'] ?? 0);
                 if ($fromOs > 0) {
                     $ms = $fromOs;
                 }
-            } elseif ($qualify && !$isDynamic && filter_var($host, FILTER_VALIDATE_IP)) {
-                // Fixed-IP peer (no REGISTER): OPTIONS is the only liveness signal
-                $ms = SipOptionsProbe::rttMs($host, $port, 1.5, $user);
+            } elseif ($qualify && !$isDynamic) {
+                // Fixed-IP peer(s): OPTIONS the first IP for Live column.
+                $ms = SipOptionsProbe::rttMs($peerIps[0], $port, 1.5, $user);
                 $online = $ms !== null;
             }
 
@@ -412,8 +421,7 @@ final class SipUserController extends CrudController
         $mode = strtolower(trim((string) ($data['connection_mode'] ?? '')));
         if (!isset(SipPeerOptions::CONNECTION_MODE[$mode])) {
             $hostGuess = trim((string) ($data['sip_host'] ?? ($existing['sip_host'] ?? 'dynamic')));
-            $mode = ($hostGuess !== '' && strtolower($hostGuess) !== 'dynamic' && filter_var($hostGuess, FILTER_VALIDATE_IP))
-                ? 'ip' : 'dynamic';
+            $mode = SipHosts::parse($hostGuess) !== [] ? 'ip' : 'dynamic';
         }
         $data['connection_mode'] = $mode;
 
@@ -423,11 +431,13 @@ final class SipUserController extends CrudController
         }
 
         if ($mode === 'ip') {
-            $host = trim((string) ($data['sip_host'] ?? ''));
-            if ($host === '' || strtolower($host) === 'dynamic' || !filter_var($host, FILTER_VALIDATE_IP)) {
-                throw new \DomainException('IP based Type requires a valid Host IP on the Account tab (e.g. 192.131.111.144).');
+            $ips = SipHosts::parse(isset($data['sip_host']) ? (string) $data['sip_host'] : '');
+            if ($ips === []) {
+                throw new \DomainException(
+                    'IP based Type requires at least one valid IP on Account → Allowed IP(s) (one per line).'
+                );
             }
-            $data['sip_host'] = $host;
+            $data['sip_host'] = implode(',', $ips);
             $port = (int) ($data['sip_port'] ?? ($existing['sip_port'] ?? 5060));
             if ($port < 0 || $port > 65535) {
                 throw new \DomainException('SIP port must be 0–65535 (0 = any port).');
@@ -618,12 +628,15 @@ final class SipUserController extends CrudController
                 }
             }
 
-            // Firewall: IP peers get allow rules; dynamic / disabled remove them
+            // Firewall: IP peers get allow rules for every listed IP; dynamic / disabled remove them
             try {
                 if ($row['status'] === 'active' && $connMode === 'ip') {
-                    $ip = trim((string) ($row['sip_host'] ?? ''));
                     $peerPort = (int) ($row['sip_port'] ?? 5060);
-                    $res = $fw->sync((string) $row['username'], $ip, $peerPort);
+                    $res = $fw->syncMany(
+                        (string) $row['username'],
+                        SipHosts::parse((string) ($row['sip_host'] ?? '')),
+                        $peerPort
+                    );
                     if (!$res['ok']) {
                         App::session()->flash('warning', 'SIP saved, but firewall sync failed: ' . mb_substr($res['detail'], 0, 200));
                     }
@@ -650,9 +663,10 @@ final class SipUserController extends CrudController
                 . "Magnus-style: username+password+IP/FQDN — leave Outbound Proxy blank.";
         }
         if ($row && $connMode === 'ip' && $row['status'] === 'active') {
-            $ip = (string) ($row['sip_host'] ?? '');
+            $ips = SipHosts::parse((string) ($row['sip_host'] ?? ''));
             $peerPort = (int) ($row['sip_port'] ?? 5060);
-            return "IP based SIP peer saved. Host={$ip} port={$peerPort}. Calls from that IP are accepted. Firewall updated.";
+            return 'IP based SIP peer saved. Allowed IPs=' . implode(', ', $ips)
+                . " port={$peerPort}. Firewall updated for each IP.";
         }
         if ($row && $connMode === 'dynamic' && empty($row['password_enc'])) {
             App::session()->flash(
@@ -689,6 +703,11 @@ final class SipUserController extends CrudController
         $values['connection_mode'] = $this->resolveConnectionMode($values + ($existing ?? []));
         if (($values['connection_mode'] ?? '') === 'dynamic') {
             $values['sip_host'] = 'dynamic';
+        } else {
+            $values['sip_host'] = SipHosts::forForm((string) ($values['sip_host'] ?? ''));
+        }
+        if (!isset($values['max_cps']) || $values['max_cps'] === '' || $values['max_cps'] === null) {
+            $values['max_cps'] = $existing['max_cps'] ?? '1';
         }
         return $values;
     }
@@ -700,11 +719,7 @@ final class SipUserController extends CrudController
         if (isset(SipPeerOptions::CONNECTION_MODE[$mode])) {
             return $mode;
         }
-        $host = trim((string) ($row['sip_host'] ?? 'dynamic'));
-        if ($host !== '' && strtolower($host) !== 'dynamic' && filter_var($host, FILTER_VALIDATE_IP)) {
-            return 'ip';
-        }
-        return 'dynamic';
+        return SipHosts::parse((string) ($row['sip_host'] ?? '')) !== [] ? 'ip' : 'dynamic';
     }
 
     public static function generatePassword(int $bytes = 15): string

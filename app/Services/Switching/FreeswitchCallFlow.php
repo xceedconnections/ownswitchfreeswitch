@@ -15,6 +15,7 @@ use Ownswitch\Services\Settings\SettingsService;
 use Ownswitch\Support\Destination;
 use Ownswitch\Support\DstFormat;
 use Ownswitch\Support\MediaPolicy;
+use Ownswitch\Support\SipHosts;
 use PDO;
 
 /**
@@ -484,13 +485,29 @@ final class FreeswitchCallFlow
             }
         }
         if (filter_var($ip, FILTER_VALIDATE_IP)) {
+            // Exact single-IP rows + FIND_IN_SET for multi-IP sip_host lists.
             $st = $this->db->prepare(
-                "SELECT * FROM sip_accounts WHERE status = 'active' AND connection_mode = 'ip' AND sip_host = ? LIMIT 1"
+                "SELECT * FROM sip_accounts
+                 WHERE status = 'active' AND connection_mode = 'ip'
+                   AND (sip_host = ? OR FIND_IN_SET(?, sip_host) > 0)
+                 LIMIT 1"
             );
-            $st->execute([$ip]);
+            $st->execute([$ip, $ip]);
             $row = $st->fetch(PDO::FETCH_ASSOC);
             if ($row) {
                 return $row;
+            }
+            // Fallback scan (handles legacy spaces / odd separators).
+            try {
+                $st = $this->db->query(
+                    "SELECT * FROM sip_accounts WHERE status = 'active' AND connection_mode = 'ip'"
+                );
+                foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $cand) {
+                    if (SipHosts::matches((string) ($cand['sip_host'] ?? ''), $ip)) {
+                        return $cand;
+                    }
+                }
+            } catch (\Throwable) {
             }
             try {
                 $st = $this->db->prepare(

@@ -232,9 +232,11 @@ final class CdrIngestService
             if ($customerId === null) {
                 $st = $this->pdo->prepare(
                     "SELECT id, customer_id FROM sip_accounts
-                     WHERE status = 'active' AND sip_host = ? LIMIT 2"
+                     WHERE status = 'active'
+                       AND (sip_host = ? OR FIND_IN_SET(?, sip_host) > 0)
+                     LIMIT 2"
                 );
-                $st->execute([$d['source_ip']]);
+                $st->execute([$d['source_ip'], $d['source_ip']]);
                 $rows = $st->fetchAll(PDO::FETCH_ASSOC);
                 if (count($rows) === 1) {
                     $out['sip_account_id'] = (int) $rows[0]['id'];

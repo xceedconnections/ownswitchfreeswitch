@@ -286,9 +286,12 @@ final class FreeswitchProvisioner
         }
         try {
             $st = App::db()->prepare(
-                "SELECT username FROM sip_accounts WHERE status = 'active' AND sip_host = ? LIMIT 1"
+                "SELECT username FROM sip_accounts
+                 WHERE status = 'active'
+                   AND (sip_host = ? OR FIND_IN_SET(?, sip_host) > 0)
+                 LIMIT 1"
             );
-            $st->execute([$ip]);
+            $st->execute([$ip, $ip]);
             $u = $st->fetchColumn();
             return is_string($u) && $u !== '' ? $u : null;
         } catch (\Throwable) {

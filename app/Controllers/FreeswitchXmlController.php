@@ -10,6 +10,7 @@ use Ownswitch\Http\Response;
 use Ownswitch\Services\Switching\FreeswitchCallFlow;
 use Ownswitch\Support\Crypto;
 use Ownswitch\Support\MediaPolicy;
+use Ownswitch\Support\SipHosts;
 
 /** FreeSWITCH mod_xml_curl + mod_xml_cdr. Loopback nginx only. */
 final class FreeswitchXmlController
@@ -72,10 +73,10 @@ final class FreeswitchXmlController
             return $this->notFound();
         }
         $mode = strtolower((string) ($row['connection_mode'] ?? 'dynamic'));
-        $host = trim((string) ($row['sip_host'] ?? ''));
+        $cidr = SipHosts::cidrParam((string) ($row['sip_host'] ?? ''));
         $params = '';
-        if ($mode === 'ip' && filter_var($host, FILTER_VALIDATE_IP)) {
-            $params .= '<param name="cidr" value="' . $this->x($host) . '/32"/>'
+        if ($mode === 'ip' && $cidr !== '') {
+            $params .= '<param name="cidr" value="' . $this->x($cidr) . '"/>'
                 . '<param name="allow-empty-password" value="true"/>';
         } else {
             // Challenge realm is whatever the phone sent (public IP or portal hostname).
