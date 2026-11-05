@@ -37,6 +37,7 @@
     <param name="local-network-acl" value="localnet.auto"/>
   </settings>
   <gateways>
-    <X-PRE-PROCESS cmd="include" data="external/*.xml"/>
+    <!-- Absolute path: relative "external/*.xml" resolves against conf/ and misses sip_profiles/external. -->
+    <X-PRE-PROCESS cmd="include" data="@@FS_PREFIX@@/conf/sip_profiles/external/*.xml"/>
   </gateways>
 </profile>

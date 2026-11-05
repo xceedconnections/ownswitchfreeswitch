@@ -47,12 +47,21 @@ else
   install -d -m 0755 "${GW_DIR}"
 fi
 
-# Ensure external profile includes external/*.xml
+# Absolute include path — relative "external/*.xml" resolves under conf/ and misses sip_profiles/external
 EXT_XML="${FS_CONF}/sip_profiles/external.xml"
-if [[ -f "${EXT_XML}" ]] && ! grep -q 'external/\*\.xml\|external/\*' "${EXT_XML}"; then
-  if grep -q '<gateways>' "${EXT_XML}"; then
-    sed -i 's#<gateways>#<gateways>\n    <X-PRE-PROCESS cmd="include" data="external/*.xml"/>#' "${EXT_XML}"
-    echo "Added external/*.xml include to external.xml"
+ABS_INC="<X-PRE-PROCESS cmd=\"include\" data=\"${FS_CONF}/sip_profiles/external/*.xml\"/>"
+if [[ -f "${EXT_XML}" ]]; then
+  if grep -q 'sip_profiles/external/\*\.xml' "${EXT_XML}"; then
+    echo "external.xml already uses absolute gateway include"
+  else
+    cp -a "${EXT_XML}" "${EXT_XML}.bak.$(date +%s)"
+    # Replace relative include or inject into <gateways>
+    if grep -q 'data="external/\*\.xml"' "${EXT_XML}"; then
+      sed -i "s#data=\"external/\*\.xml\"#data=\"${FS_CONF}/sip_profiles/external/*.xml\"#" "${EXT_XML}"
+    elif grep -q '<gateways>' "${EXT_XML}"; then
+      sed -i "s#<gateways>#<gateways>\n    ${ABS_INC}#" "${EXT_XML}"
+    fi
+    echo "Patched absolute gateway include into external.xml"
   fi
 fi
 
