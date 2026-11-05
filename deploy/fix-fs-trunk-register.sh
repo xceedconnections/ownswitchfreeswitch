@@ -1,72 +1,136 @@
 #!/usr/bin/env bash
-# Diagnose + force-reload FreeSWITCH outbound REGISTER gateways (portal trunks).
+# Fix "not loaded" / no REGISTER to Magnus-Asterisk for Ownswitch trunks.
+#
 #   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-fs-trunk-register.sh | sudo bash
+#
 set -euo pipefail
 
-FS_PREFIX="${FS_PREFIX:-/usr/local/freeswitch}"
-FS_CLI="${FS_PREFIX}/bin/fs_cli"
-OWN_VAR="${OWN_VAR:-/var/lib/ownswitch}"
-GW_DIR="${FREESWITCH_GATEWAY_DIR:-${OWN_VAR}/freeswitch/gateways}"
-OWN_ETC="${OWN_ETC:-/etc/ownswitch}"
-ENVF="${OWN_ETC}/ownswitch.env"
-
-echo "== FreeSWITCH trunk REGISTER fix =="
-echo "Gateway dir: ${GW_DIR}"
-
-# Ensure gateway store + symlink exist
-curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-fs-trunk-sync.sh | bash
-
-echo
-echo "== Gateway XML files =="
-ls -la "${GW_DIR}" 2>/dev/null || echo "(none yet — re-save trunks in portal after refresh)"
-
-if [[ ! -x "$FS_CLI" ]]; then
-  echo "ERROR: fs_cli not found at $FS_CLI" >&2
+if [[ "$(id -u)" -ne 0 ]]; then
+  echo "Run as root" >&2
   exit 1
 fi
 
-# ESL password from env if present
-ESL_PASS=""
+FS_PREFIX="${FS_PREFIX:-/usr/local/freeswitch}"
+FS_CONF="${FREESWITCH_CONF:-${FS_PREFIX}/conf}"
+GW_DIR="${FS_CONF}/sip_profiles/external"
+OWN_ETC="${OWN_ETC:-/etc/ownswitch}"
+OWN_OPT="${OWN_OPT:-/opt/ownswitch}"
+ENVF="${OWN_ETC}/ownswitch.env"
+FS_CLI="${FS_PREFIX}/bin/fs_cli"
+
+echo "== 1) Refresh portal code =="
+curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/refresh-ui.sh | bash
+
+echo
+echo "== 2) Gateway dir under FreeSWITCH conf (readable by sofia) =="
+# Remove OWN_VAR symlink layouts — FreeSWITCH often cannot traverse /var/lib/ownswitch.
+if [[ -L "${GW_DIR}" ]]; then
+  old="$(readlink -f "${GW_DIR}" 2>/dev/null || true)"
+  echo "Removing symlink ${GW_DIR} -> ${old}"
+  rm -f "${GW_DIR}"
+  install -d -m 2770 "${GW_DIR}"
+  if [[ -n "$old" && -d "$old" ]]; then
+    shopt -s nullglob
+    for f in "${old}"/gw-*.xml; do mv -n "$f" "${GW_DIR}/" 2>/dev/null || true; done
+    shopt -u nullglob
+  fi
+fi
+install -d -m 0755 "${FS_CONF}/sip_profiles"
+if id ownswitch >/dev/null 2>&1 && getent group freeswitch >/dev/null 2>&1; then
+  install -d -m 2770 -o ownswitch -g freeswitch "${GW_DIR}"
+  usermod -aG freeswitch ownswitch 2>/dev/null || true
+  # Ensure PHP-FPM can traverse into /usr/local/freeswitch/conf
+  chgrp freeswitch "${FS_PREFIX}" "${FS_CONF}" "${FS_CONF}/sip_profiles" 2>/dev/null || true
+  chmod 0755 "${FS_PREFIX}" "${FS_CONF}" "${FS_CONF}/sip_profiles" 2>/dev/null || true
+  chmod g+rx "${FS_PREFIX}" "${FS_CONF}" "${FS_CONF}/sip_profiles" 2>/dev/null || true
+else
+  install -d -m 0755 "${GW_DIR}"
+fi
+
+# Ensure external profile includes external/*.xml
+EXT_XML="${FS_CONF}/sip_profiles/external.xml"
+if [[ -f "${EXT_XML}" ]] && ! grep -q 'external/\*\.xml\|external/\*' "${EXT_XML}"; then
+  if grep -q '<gateways>' "${EXT_XML}"; then
+    sed -i 's#<gateways>#<gateways>\n    <X-PRE-PROCESS cmd="include" data="external/*.xml"/>#' "${EXT_XML}"
+    echo "Added external/*.xml include to external.xml"
+  fi
+fi
+
+echo
+echo "== 3) PHP open_basedir must allow /usr/local/freeswitch =="
+patched=0
+for f in /etc/php/*/fpm/pool.d/ownswitch.conf /etc/php/*/fpm/pool.d/*.conf; do
+  [[ -f "$f" ]] || continue
+  grep -q 'open_basedir' "$f" 2>/dev/null || continue
+  if ! grep -q '/usr/local/freeswitch' "$f"; then
+    sed -i 's|php_admin_value\[open_basedir\] = \(.*\)|php_admin_value[open_basedir] = \1:/usr/local/freeswitch|' "$f"
+    echo "Patched $f"
+    patched=1
+  fi
+done
+if [[ "$patched" -eq 1 ]]; then
+  systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php8.2-fpm 2>/dev/null || systemctl restart php-fpm 2>/dev/null || true
+fi
+
+# Persist gateway dir in env
 if [[ -f "$ENVF" ]]; then
-  ESL_PASS="$(grep -E '^FREESWITCH_ESL_PASSWORD=' "$ENVF" | head -1 | cut -d= -f2- || true)"
-fi
-FS_ARGS=(-x)
-if [[ -n "$ESL_PASS" ]]; then
-  FS_ARGS=(-p "$ESL_PASS" -x)
-fi
-
-echo
-echo "== reloadxml + rescan + register each gw-*.xml =="
-"$FS_CLI" "${FS_ARGS[@]}" 'reloadxml' || true
-"$FS_CLI" "${FS_ARGS[@]}" 'sofia profile external rescan' || true
-
-shopt -s nullglob
-for f in "${GW_DIR}"/gw-*.xml; do
-  base="$(basename "$f" .xml)"
-  echo "--- $base ---"
-  grep -E 'register|username|proxy|realm' "$f" | sed 's/password"[^"]*"/password" ***"/g' || true
-  "$FS_CLI" "${FS_ARGS[@]}" "sofia profile external killgw ${base}" 2>/dev/null || true
-done
-sleep 1
-"$FS_CLI" "${FS_ARGS[@]}" 'reloadxml' || true
-"$FS_CLI" "${FS_ARGS[@]}" 'sofia profile external rescan' || true
-sleep 1
-for f in "${GW_DIR}"/gw-*.xml; do
-  base="$(basename "$f" .xml)"
-  "$FS_CLI" "${FS_ARGS[@]}" "sofia profile external register ${base}" 2>/dev/null || true
-  echo "Status ${base}:"
-  "$FS_CLI" "${FS_ARGS[@]}" "sofia status gateway ${base}" 2>/dev/null | head -n 20 || true
-done
-shopt -u nullglob
-
-echo
-echo "== Also sync from portal DB =="
-if [[ -f /opt/ownswitch/current/bin/sync-opensips-trunks.php ]]; then
-  runuser -u ownswitch -- env OWNSWITCH_ENV_FILE="$ENVF" \
-    php /opt/ownswitch/current/bin/sync-opensips-trunks.php || true
+  if grep -q '^FREESWITCH_GATEWAY_DIR=' "$ENVF"; then
+    sed -i "s|^FREESWITCH_GATEWAY_DIR=.*|FREESWITCH_GATEWAY_DIR=${GW_DIR}|" "$ENVF"
+  else
+    printf '\nFREESWITCH_GATEWAY_DIR=%s\n' "${GW_DIR}" >> "$ENVF"
+  fi
 fi
 
 echo
-echo "On Magnus/Asterisk you should see a peer REGISTER from this server's public IP."
-echo "If State is FAIL_WAIT / UNREGED: wrong user/pass/realm, or Asterisk ACL blocking this IP."
-echo "Re-save the trunk in Ownswitch (Auth = Outbound REGISTER) after this script if gw XML was empty."
+echo "== 4) Sync trunks from DB into ${GW_DIR} =="
+SYNC="${OWN_OPT}/current/bin/sync-fs-trunks.php"
+if [[ ! -f "$SYNC" ]]; then
+  SYNC="${OWN_OPT}/current/bin/sync-opensips-trunks.php"
+fi
+if [[ -f "$SYNC" ]]; then
+  runuser -u ownswitch -- env OWNSWITCH_ENV_FILE="$ENVF" php "$SYNC" || \
+    env OWNSWITCH_ENV_FILE="$ENVF" php "$SYNC" || true
+else
+  echo "WARN: sync script missing — re-save trunk in portal after this fix"
+fi
+
+echo
+echo "== 5) Force Sofia to load + REGISTER =="
+ESL_PASS=""
+[[ -f "$ENVF" ]] && ESL_PASS="$(grep -E '^FREESWITCH_ESL_PASSWORD=' "$ENVF" | head -1 | cut -d= -f2- || true)"
+cli() {
+  if [[ -n "$ESL_PASS" ]]; then
+    "$FS_CLI" -p "$ESL_PASS" -x "$1"
+  else
+    "$FS_CLI" -x "$1"
+  fi
+}
+
+if [[ -x "$FS_CLI" ]]; then
+  cli 'reloadxml' || true
+  # Full profile restart reliably reloads gateways (brief SIP blip).
+  cli 'sofia profile external restart' || true
+  sleep 2
+  shopt -s nullglob
+  for f in "${GW_DIR}"/gw-*.xml; do
+    base="$(basename "$f" .xml)"
+    echo "---- ${base} ----"
+    grep -E 'name="(register|username|proxy|realm|password)"' "$f" | sed 's/password" value="[^"]*"/password" value="***"/g' || true
+    cli "sofia profile external register ${base}" 2>/dev/null || true
+    cli "sofia status gateway ${base}" 2>/dev/null | head -n 25 || true
+  done
+  shopt -u nullglob
+  echo
+  echo "All gateways:"
+  cli 'sofia status' 2>/dev/null | head -n 80 || true
+else
+  echo "WARN: fs_cli missing"
+fi
+
+echo
+echo "Gateway files now:"
+ls -la "${GW_DIR}"
+
+echo
+echo "If still not REGED: check Magnus peer user/pass and that Asterisk allows this server public IP."
+echo "Portal list column should show REGED after refresh (hard-reload the page)."

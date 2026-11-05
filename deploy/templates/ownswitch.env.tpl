@@ -73,7 +73,7 @@ FREESWITCH_ESL_PORT=8021
 FREESWITCH_ESL_PASSWORD=@@FS_ESL_PASSWORD@@
 FS_XML_SECRET=@@FS_XML_SECRET@@
 FREESWITCH_CONF=/usr/local/freeswitch/conf
-FREESWITCH_GATEWAY_DIR=@@OWN_VAR@@/freeswitch/gateways
+FREESWITCH_GATEWAY_DIR=/usr/local/freeswitch/conf/sip_profiles/external
 
 # --- Public addressing ---
 PUBLIC_IP=@@PUBLIC_IP@@

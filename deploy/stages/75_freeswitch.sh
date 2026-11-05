@@ -188,27 +188,31 @@ render_template "${TEMPLATE_DIR}/freeswitch/xml_curl.conf.xml.tpl" "${conf}/auto
 render_template "${TEMPLATE_DIR}/freeswitch/xml_cdr.conf.xml.tpl" "${conf}/autoload_configs/xml_cdr.conf.xml" 0640 freeswitch freeswitch
 (( RENDER_CHANGED )) && fs_changed=1
 install -d -m 0750 -o freeswitch -g freeswitch "${FS_PREFIX}/log/xml_cdr"
-# Portal writes gateways under OWN_VAR (PHP open_basedir). Sofia includes them via symlink.
-GW_VAR="${OWN_VAR}/freeswitch/gateways"
-install -d -m 0755 "${OWN_VAR}/freeswitch"
+# Portal (ownswitch) writes gw-*.xml here; FreeSWITCH (group) reads via external/*.xml include.
+# Keep a real directory under conf (do NOT symlink to OWN_VAR — freeswitch often cannot traverse it).
+GW_DIR="${conf}/sip_profiles/external"
+if [[ -L "${GW_DIR}" ]]; then
+  # Migrate away from broken OWN_VAR symlink layouts.
+  target="$(readlink -f "${GW_DIR}" 2>/dev/null || true)"
+  rm -f "${GW_DIR}"
+  install -d -m 2770 "${GW_DIR}"
+  if [[ -n "$target" && -d "$target" ]]; then
+    shopt -s nullglob
+    for f in "${target}"/gw-*.xml; do
+      mv -n "$f" "${GW_DIR}/" 2>/dev/null || true
+    done
+    shopt -u nullglob
+  fi
+fi
 if id ownswitch >/dev/null 2>&1; then
-  install -d -m 2770 -o ownswitch -g freeswitch "${GW_VAR}"
+  install -d -m 2770 -o ownswitch -g freeswitch "${GW_DIR}"
   usermod -aG freeswitch ownswitch 2>/dev/null || true
+  chown -R ownswitch:freeswitch "${GW_DIR}"
+  find "${GW_DIR}" -type f -exec chmod 0660 {} + 2>/dev/null || true
 else
-  install -d -m 0750 -o freeswitch -g freeswitch "${GW_VAR}"
+  install -d -m 0750 -o freeswitch -g freeswitch "${GW_DIR}"
 fi
-# Replace bare directory with symlink if needed (keep any existing xml).
-if [[ -d "${conf}/sip_profiles/external" && ! -L "${conf}/sip_profiles/external" ]]; then
-  shopt -s nullglob
-  for f in "${conf}/sip_profiles/external"/*.xml; do
-    mv -n "$f" "${GW_VAR}/" 2>/dev/null || true
-  done
-  shopt -u nullglob
-  rm -rf "${conf}/sip_profiles/external"
-fi
-ln -sfn "${GW_VAR}" "${conf}/sip_profiles/external"
-chown -h freeswitch:freeswitch "${conf}/sip_profiles/external" 2>/dev/null || true
-chmod 0755 "${OWN_VAR}/freeswitch" 2>/dev/null || true
+
 
 
 if [[ -f "${OWN_ETC}/ownswitch.env" ]]; then

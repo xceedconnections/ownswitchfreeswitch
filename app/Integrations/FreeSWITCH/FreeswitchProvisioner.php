@@ -34,7 +34,7 @@ final class FreeswitchProvisioner
         $conf = rtrim((string) ($cfg['conf_dir'] ?? '/usr/local/freeswitch/conf'), '/');
         $gw = rtrim((string) ($cfg['gateway_dir'] ?? ''), '/');
         if ($gw === '') {
-            $gw = '/var/lib/ownswitch/freeswitch/gateways';
+            $gw = $conf . '/sip_profiles/external';
         }
         if ($host === '' || $password === '') {
             return new self('', 8021, '', $conf, 'FREESWITCH_ESL_HOST / FREESWITCH_ESL_PASSWORD are not set', $gw);
@@ -414,20 +414,27 @@ final class FreeswitchProvisioner
     {
         $dir = $this->gatewayDirPath !== ''
             ? $this->gatewayDirPath
-            : '/var/lib/ownswitch/freeswitch/gateways';
+            : ($this->confDir . '/sip_profiles/external');
+        // Resolve symlink targets so open_basedir / permission errors are clearer.
         clearstatcache(true, $dir);
+        if (is_link($dir)) {
+            $resolved = realpath($dir);
+            if ($resolved !== false) {
+                $dir = $resolved;
+            }
+        }
         if (!is_dir($dir)) {
             $parent = dirname($dir);
             if (!is_dir($parent) && !@mkdir($parent, 02775, true) && !is_dir($parent)) {
                 throw new \RuntimeException(
-                    'Cannot create FreeSWITCH gateway parent: ' . $parent
-                    . '. Run: curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-fs-trunk-sync.sh | sudo bash'
+                    'Cannot create FreeSWITCH sip_profiles: ' . $parent
+                    . '. Run: curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-fs-trunk-register.sh | sudo bash'
                 );
             }
             if (!@mkdir($dir, 02770, true) && !is_dir($dir)) {
                 throw new \RuntimeException(
                     'Cannot create FreeSWITCH gateway directory: ' . $dir
-                    . '. Run: curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-fs-trunk-sync.sh | sudo bash'
+                    . '. Run: curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-fs-trunk-register.sh | sudo bash'
                 );
             }
             @chmod($dir, 02770);
@@ -435,7 +442,7 @@ final class FreeswitchProvisioner
         if (!is_writable($dir)) {
             throw new \RuntimeException(
                 'FreeSWITCH gateway directory not writable by portal: ' . $dir
-                . ' (chown ownswitch:freeswitch, chmod 2770)'
+                . ' (chown ownswitch:freeswitch && chmod 2770 — and allow /usr/local/freeswitch in PHP open_basedir)'
             );
         }
         return $dir;
