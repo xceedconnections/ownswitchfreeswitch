@@ -47,7 +47,7 @@ $fmtLim = static function ($v): string {
         <?php else: ?>
             <div class="table-responsive">
                 <table class="table table-sm mb-0 os-table">
-                    <thead><tr><th>SIP user</th><th>Status</th><th class="os-num">CC</th><th class="os-num">CPS</th><th class="os-num">CAP (buy $/min)</th></tr></thead>
+                    <thead><tr><th>SIP user</th><th>Status</th><th class="os-num">CC</th><th class="os-num">CPS</th><th class="os-num">CAP (tariff $/min)</th></tr></thead>
                     <tbody>
                     <?php foreach ($sipCaps as $s): ?>
                         <tr>
@@ -61,7 +61,7 @@ $fmtLim = static function ($v): string {
                     </tbody>
                 </table>
             </div>
-            <p class="form-text mb-0 mt-2">CAP rejects calls when the provider buy rate for the dialled prefix is higher than the CAP.</p>
+            <p class="form-text mb-0 mt-2">SIP CAP rejects calls when the customer tariff (sell) rate for the dialled prefix is higher than the CAP. Trunk CAP (on Providers → Trunks) separately limits by provider buy rate.</p>
         <?php endif; ?>
     </div>
 

@@ -288,12 +288,12 @@ final class SipUserController extends CrudController
             ],
             [
                 'name' => 'rate_cap',
-                'label' => 'CAP (max buy $/min)',
+                'label' => 'CAP (max tariff $/min)',
                 'type' => 'number',
                 'min' => 0,
-                'placeholder' => '0.005',
+                'placeholder' => '0.006',
                 'list' => true,
-                'help' => 'Max provider (buy) rate allowed for this user. If the selected trunk costs more than CAP for the dialled prefix, the call is rejected (403 Rate Cap Exceeded). Blank = no CAP. Example: CAP 0.005 blocks vendor 1401@0.009 but allows 1213@0.004.',
+                'help' => 'Compared to this customer’s tariff (sell) rate for the dialled prefix — independent of trunk/vendor CAP. Example: CAP 0.006 allows tariff 1213@0.0055, blocks 1204@0.007 and 1456@0.01. Blank = no CAP.',
                 'section' => 'Routing & media',
             ],
             [

@@ -457,7 +457,12 @@ final class FreeswitchCallFlow
         }
     }
 
-    /** @param array<string,mixed> $account @param array<string,mixed> $rate */
+    /**
+     * SIP user CAP vs customer tariff (sell) rate — independent of trunk buy CAP.
+     *
+     * @param array<string,mixed> $account
+     * @param array<string,mixed> $rate from RateResolver::customer()
+     */
     private function userOverCap(array $account, array $rate): bool
     {
         $cap = $account['rate_cap'] ?? null;
@@ -646,28 +651,28 @@ final class FreeswitchCallFlow
         return [];
     }
 
-    /** @param array<string,mixed> $trunk */
+    /**
+     * Trunk CAP vs provider buy rate for this trunk — independent of SIP user tariff CAP.
+     * Skips this trunk when buy > CAP (failover may try the next trunk).
+     *
+     * @param array<string,mixed> $trunk
+     */
     private function overCap(array $trunk, string $dest): bool
     {
         $cap = $trunk['rate_cap'] ?? null;
         if ($cap === null || $cap === '' || (float) $cap <= 0) {
             return false;
         }
-        $cid = (int) ($trunk['carrier_id'] ?? 0);
-        if ($cid <= 0) {
+        $tid = (int) ($trunk['id'] ?? 0);
+        if ($tid <= 0) {
             return false;
         }
-        $st = $this->db->prepare(
-            "SELECT rate FROM carrier_tariffs
-             WHERE carrier_id = ? AND status = 'active' AND ? LIKE CONCAT(prefix, '%')
-             ORDER BY CHAR_LENGTH(prefix) DESC LIMIT 1"
-        );
-        $st->execute([$cid, $dest]);
-        $rate = $st->fetchColumn();
-        if ($rate === false) {
-            return false;
+        $buy = (new RateResolver($this->db, new SettingsService($this->db)))->carrier($tid, $dest);
+        if ($buy === null) {
+            // CAP is set but no buy rate for this destination → do not send on this trunk.
+            return true;
         }
-        return (float) $rate > (float) $cap;
+        return (float) $buy['rate'] > (float) $cap;
     }
 
     /** @param array<string,mixed> $trunk */
