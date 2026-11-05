@@ -12,6 +12,9 @@ Group=freeswitch
 RuntimeDirectory=freeswitch
 RuntimeDirectoryMode=0750
 Environment=FREESWITCH_PID=/run/freeswitch/freeswitch.pid
+Environment=LD_LIBRARY_PATH=@@FS_PREFIX@@/lib
+ExecStartPre=/bin/mkdir -p @@FS_PREFIX@@/log @@FS_PREFIX@@/db @@FS_PREFIX@@/storage @@FS_PREFIX@@/recordings @@FS_PREFIX@@/sounds
+ExecStartPre=/bin/chown -R freeswitch:freeswitch @@FS_PREFIX@@/log @@FS_PREFIX@@/db @@FS_PREFIX@@/storage @@FS_PREFIX@@/recordings @@FS_PREFIX@@/sounds @@FS_PREFIX@@/conf
 ExecStart=@@FS_PREFIX@@/bin/freeswitch -nc -nf -nonat -conf @@FS_PREFIX@@/conf -db @@FS_PREFIX@@/db -log @@FS_PREFIX@@/log -run /run/freeswitch
 ExecReload=/usr/bin/env kill -HUP $MAINPID
 TimeoutStartSec=120
@@ -19,16 +22,13 @@ Restart=on-failure
 RestartSec=5
 LimitNOFILE=100000
 LimitCORE=infinity
-LimitSTACK=240
+# Must be large enough for SoftTimer / Sofia threads (240 bytes caused immediate SEGV).
+LimitSTACK=250000
+LimitNPROC=60000
 LimitRTPRIO=infinity
-LimitRTTIME=7000000
-IOSchedulingClass=realtime
-IOSchedulingPriority=2
-CPUSchedulingPolicy=rr
-CPUSchedulingPriority=89
-NoNewPrivileges=true
-ProtectHome=true
-PrivateTmp=true
+LimitRTTIME=infinity
+UMask=0007
+NoNewPrivileges=false
 
 [Install]
 WantedBy=multi-user.target

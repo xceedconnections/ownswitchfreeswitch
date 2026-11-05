@@ -130,7 +130,9 @@ fi
 ensure_system_user freeswitch "${FS_PREFIX}"
 chown -R freeswitch:freeswitch "${FS_PREFIX}"
 chmod -R o-rwx "${FS_PREFIX}"
-install -d -m 0750 -o freeswitch -g freeswitch "${FS_PREFIX}/log" "${FS_PREFIX}/db"
+install -d -m 0750 -o freeswitch -g freeswitch \
+  "${FS_PREFIX}/log" "${FS_PREFIX}/db" "${FS_PREFIX}/storage" \
+  "${FS_PREFIX}/recordings" "${FS_PREFIX}/sounds" "${FS_PREFIX}/run"
 
 # ---------------------------------------------------------------------------
 # 2. Configuration: SIP 5060, RTP range, ESL, xml_curl, xml_cdr
