@@ -59,31 +59,63 @@ final class FreeswitchXmlController
 
     private function directory(Request $r): string
     {
-        $user = trim((string) ($r->input('user', $r->input('sip_auth_username', ''))));
+        $user = trim((string) ($r->input('user', $r->input('sip_auth_username', $r->input('Hunt-Username', '')))));
         $domain = trim((string) ($r->input('domain', $r->input('sip_auth_realm', ''))));
         // FreeSWITCH often sends domain as key_value (tag_name=domain, key_name=name).
         if ($domain === '') {
             $domain = trim((string) $r->input('key_value', ''));
         }
+        // xml_locate "user id X" may put the username in key_value when key_name=id.
+        if ($user === '' && strtolower((string) $r->input('key_name', '')) === 'id') {
+            $user = trim((string) $r->input('key_value', ''));
+        }
         if ($domain === '') {
             return $this->notFound();
         }
-        // Domain-only probe: return an empty domain shell so Sofia knows the realm exists.
-        if ($user === '') {
-            return '<?xml version="1.0" encoding="UTF-8"?>'
-                . '<document type="freeswitch/xml"><section name="directory">'
-                . '<domain name="' . $this->x($domain) . '">'
-                . '<params><param name="dial-string" value="{presence_id=${dialed_user}@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/></params>'
-                . '<groups><group name="default"><users/></group></groups>'
-                . '</domain></section></document>';
+
+        $rows = [];
+        if ($user !== '') {
+            $st = App::db()->prepare(
+                "SELECT * FROM sip_accounts WHERE username = ? AND status = 'active' LIMIT 1"
+            );
+            $st->execute([$user]);
+            $one = $st->fetch(\PDO::FETCH_ASSOC);
+            if ($one) {
+                $rows[] = $one;
+            }
+        } else {
+            // Domain-only locate: Sofia expects users in the domain document (not an empty shell).
+            $st = App::db()->query(
+                "SELECT * FROM sip_accounts WHERE status = 'active' ORDER BY id ASC LIMIT 500"
+            );
+            $rows = $st ? ($st->fetchAll(\PDO::FETCH_ASSOC) ?: []) : [];
         }
-        $st = App::db()->prepare(
-            "SELECT * FROM sip_accounts WHERE username = ? AND status = 'active' LIMIT 1"
-        );
-        $st->execute([$user]);
-        $row = $st->fetch(\PDO::FETCH_ASSOC);
-        if (!$row) {
+        if ($rows === []) {
             return $this->notFound();
+        }
+
+        $usersXml = '';
+        foreach ($rows as $row) {
+            $usersXml .= $this->directoryUserXml($row, $domain);
+        }
+        if ($usersXml === '') {
+            return $this->notFound();
+        }
+
+        return '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<document type="freeswitch/xml"><section name="directory">'
+            . '<domain name="' . $this->x($domain) . '">'
+            . '<params><param name="dial-string" value="{presence_id=${dialed_user}@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/></params>'
+            . '<groups><group name="default"><users>' . $usersXml . '</users></group></groups>'
+            . '</domain></section></document>';
+    }
+
+    /** @param array<string,mixed> $row */
+    private function directoryUserXml(array $row, string $domain): string
+    {
+        $user = (string) ($row['username'] ?? '');
+        if ($user === '') {
+            return '';
         }
         $mode = strtolower((string) ($row['connection_mode'] ?? 'dynamic'));
         $cidr = SipHosts::cidrParam((string) ($row['sip_host'] ?? ''));
@@ -92,23 +124,25 @@ final class FreeswitchXmlController
             $params .= '<param name="cidr" value="' . $this->x($cidr) . '"/>'
                 . '<param name="allow-empty-password" value="true"/>';
         } else {
-            // Challenge realm is whatever the phone sent (public IP or portal hostname).
-            $ha1 = '';
+            $plain = '';
             if (!empty($row['password_enc'])) {
                 try {
                     $plain = Crypto::decrypt((string) $row['password_enc']);
-                    $ha1 = md5($user . ':' . $domain . ':' . $plain);
                 } catch (\Throwable) {
-                    $ha1 = '';
+                    $plain = '';
                 }
             }
-            if ($ha1 === '') {
-                $ha1 = (string) ($row['ha1'] ?? '');
+            $ha1 = $plain !== '' ? md5($user . ':' . $domain . ':' . $plain) : (string) ($row['ha1'] ?? '');
+            if ($ha1 === '' && $plain === '') {
+                return '';
             }
-            if ($ha1 === '') {
-                return $this->notFound();
+            // a1-hash is preferred; password is a fallback for clients that ignore HA1.
+            if ($ha1 !== '') {
+                $params .= '<param name="a1-hash" value="' . $this->x($ha1) . '"/>';
             }
-            $params .= '<param name="a1-hash" value="' . $this->x($ha1) . '"/>';
+            if ($plain !== '') {
+                $params .= '<param name="password" value="' . $this->x($plain) . '"/>';
+            }
         }
         $media = MediaPolicy::resolve(
             isset($row['media_policy']) ? (string) $row['media_policy'] : null,
@@ -131,16 +165,11 @@ final class FreeswitchXmlController
         if (strtolower((string) ($row['dtmf_pass'] ?? 'yes')) === 'no') {
             $vars .= '<variable name="drop_dtmf" value="true"/>';
         }
-        $xmlUser = '<user id="' . $this->x($user) . '">'
-            . '<params>' . $params . '<param name="dial-string" value="{presence_id=' . $this->x($user) . '@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/>'
+        return '<user id="' . $this->x($user) . '">'
+            . '<params>' . $params
+            . '<param name="dial-string" value="{presence_id=' . $this->x($user) . '@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/>'
             . '</params>'
             . '<variables>' . $vars . '</variables></user>';
-        return '<?xml version="1.0" encoding="UTF-8"?>'
-            . '<document type="freeswitch/xml"><section name="directory">'
-            . '<domain name="' . $this->x($domain) . '">'
-            . '<params><param name="dial-string" value="{presence_id=${dialed_user}@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/></params>'
-            . '<groups><group name="default"><users>' . $xmlUser . '</users></group></groups>'
-            . '</domain></section></document>';
     }
 
     private function authorized(Request $r): bool

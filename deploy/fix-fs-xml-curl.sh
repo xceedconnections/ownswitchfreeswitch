@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build/install missing mod_xml_curl.so and reload it (SIP REGISTER directory auth).
+# Install missing mod_xml_curl.so (SIP REGISTER directory auth) and reload it.
+# Compiles the module against the already-installed FreeSWITCH (fast).
 #   curl -fsSL …/deploy/fix-fs-xml-curl.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
@@ -17,38 +18,23 @@ echo "== FreeSWITCH module dir =="
 ls -la "${MOD_DIR}/mod_xml_cdr.so" "${MOD_DIR}/mod_xml_curl.so" 2>/dev/null || true
 
 if [[ ! -f "${MOD_DIR}/mod_xml_curl.so" ]]; then
-  echo "== Building mod_xml_curl (${TAG}) =="
-  apt-get install -y -qq build-essential automake autoconf libtool libtool-bin pkg-config \
-    libcurl4-openssl-dev libssl-dev zlib1g-dev libpcre3-dev libedit-dev libsqlite3-dev \
-    libspeex-dev libspeexdsp-dev libldns-dev libopus-dev libsndfile1-dev libpq-dev \
-    libxml2-dev uuid-dev libtiff-dev 2>/dev/null || true
+  echo "== Compiling mod_xml_curl against installed FreeSWITCH (${TAG}) =="
+  apt-get install -y -qq build-essential libcurl4-openssl-dev git 2>/dev/null || true
+  [[ -f "${FS_PREFIX}/include/freeswitch/switch.h" ]] || { echo "FATAL: FreeSWITCH headers missing under ${FS_PREFIX}/include"; exit 1; }
   work="$(mktemp -d /tmp/fs-xml-curl.XXXXXX)"
   trap 'rm -rf "$work"' EXIT
   git clone --quiet --depth 1 --branch "${TAG}" https://github.com/signalwire/freeswitch.git "$work/fs"
-  (
-    cd "$work/fs"
-    ./bootstrap.sh -j
-    # Match stage 75: skip signalwire/av; force-enable xml_curl + xml_cdr
-    sed -i -E \
-      -e 's/^(applications|formats)\/mod_av/#\1\/mod_av/' \
-      -e 's/^applications\/mod_signalwire/#applications\/mod_signalwire/' \
-      -e 's|^#?xml_int/mod_xml_curl|xml_int/mod_xml_curl|' \
-      -e 's|^#?xml_int/mod_xml_cdr|xml_int/mod_xml_cdr|' \
-      modules.conf
-    grep -qE '^xml_int/mod_xml_curl' modules.conf || echo 'xml_int/mod_xml_curl' >> modules.conf
-    ./configure --prefix="${FS_PREFIX}" --sysconfdir="${FS_PREFIX}/conf" \
-      --enable-portable-binary --disable-dependency-tracking
-    # Builds libfreeswitch if needed, then installs only this module.
-    make -j"$(nproc)" mod_xml_curl-install
-  )
+  SRC="$work/fs/src/mod/xml_int/mod_xml_curl/mod_xml_curl.c"
+  [[ -f "$SRC" ]] || { echo "FATAL: source missing"; exit 1; }
+  gcc -shared -fPIC -O2 -Wall \
+    -I"${FS_PREFIX}/include/freeswitch" -I"${FS_PREFIX}/include" \
+    -o "$work/mod_xml_curl.so" "$SRC" \
+    -L"${FS_PREFIX}/lib" -lfreeswitch -lcurl -lpthread -lm
+  install -m 0755 -o freeswitch -g freeswitch "$work/mod_xml_curl.so" "${MOD_DIR}/mod_xml_curl.so"
   ldconfig
-  if [[ ! -f "${MOD_DIR}/mod_xml_curl.so" ]]; then
-    find "$work/fs" -name 'mod_xml_curl.so' -exec cp -av {} "${MOD_DIR}/" \;
-  fi
-  [[ -f "${MOD_DIR}/mod_xml_curl.so" ]] || { echo "FATAL: mod_xml_curl.so still missing"; exit 1; }
-  chown freeswitch:freeswitch "${MOD_DIR}/mod_xml_curl.so" 2>/dev/null || true
   trap - EXIT
   rm -rf "$work"
+  [[ -f "${MOD_DIR}/mod_xml_curl.so" ]] || { echo "FATAL: mod_xml_curl.so still missing"; exit 1; }
 fi
 
 MODS="${FS_PREFIX}/conf/autoload_configs/modules.conf.xml"
@@ -66,7 +52,6 @@ if [[ -f "$EXT_XML" ]]; then
     sed -i "s#<gateways>#<gateways>\n    ${GOOD}#" "$EXT_XML"
   fi
   echo "Patched gateway include → external/*.xml"
-  grep -n include "$EXT_XML" | head
 fi
 
 ESL_PASS=""
@@ -88,6 +73,6 @@ sleep 2
 echo "== Verify =="
 cli 'module_exists mod_xml_curl'
 cli 'user_exists id owner voip.xceedconnections.com'
-cli 'sofia status gateway gw-1' | head -n 25
+cli 'sofia status gateway gw-1' | head -n 20
 ls -la "${MOD_DIR}/mod_xml_curl.so"
-echo "Done. Re-REGISTER softphone: Domain=voip.xceedconnections.com OR 62.238.34.202, User=owner, same portal password."
+echo "Done. Re-REGISTER softphone: Domain=voip.xceedconnections.com OR public IP, User=owner, portal SIP password."
