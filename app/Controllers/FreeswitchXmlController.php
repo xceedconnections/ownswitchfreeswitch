@@ -102,14 +102,20 @@ final class FreeswitchXmlController
             return $this->notFound();
         }
 
-        // Users directly under <domain> (no groups wrapper) — matches FS xml_curl examples
-        // and avoids parse edge cases. dial-string kept for originate/user/ dialing.
-        return '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
-            . '<document type="freeswitch/xml"><section name="directory">'
-            . '<domain name="' . $this->x($domain) . '">'
-            . '<params><param name="dial-string" value="{presence_id=${dialed_user}@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/></params>'
+        // Pretty-printed XML: mod_xml_curl's switch_xml_parse_str rejects our otherwise-valid
+        // single-line directory documents (Error Parsing Result) but accepts the same tree
+        // with newlines/indentation — verified against a bare HTTP fixture on this host.
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
+            . "<document type=\"freeswitch/xml\">\n"
+            . "  <section name=\"directory\">\n"
+            . "    <domain name=\"" . $this->x($domain) . "\">\n"
+            . "      <params>\n"
+            . "        <param name=\"dial-string\" value=\"{presence_id=\${dialed_user}@\${dialed_domain}}\${sofia_contact(\${dialed_user}@\${dialed_domain})}\"/>\n"
+            . "      </params>\n"
             . $usersXml
-            . '</domain></section></document>';
+            . "    </domain>\n"
+            . "  </section>\n"
+            . "</document>\n";
     }
 
     /** @param array<string,mixed> $row */
@@ -123,8 +129,8 @@ final class FreeswitchXmlController
         $cidr = SipHosts::cidrParam((string) ($row['sip_host'] ?? ''));
         $params = '';
         if ($mode === 'ip' && $cidr !== '') {
-            $params .= '<param name="cidr" value="' . $this->x($cidr) . '"/>'
-                . '<param name="allow-empty-password" value="true"/>';
+            $params .= "          <param name=\"cidr\" value=\"" . $this->x($cidr) . "\"/>\n"
+                . "          <param name=\"allow-empty-password\" value=\"true\"/>\n";
         } else {
             $plain = '';
             if (!empty($row['password_enc'])) {
@@ -138,12 +144,12 @@ final class FreeswitchXmlController
             if ($ha1 === '' && $plain === '') {
                 return '';
             }
-            // a1-hash is preferred; password is a fallback for clients that ignore HA1.
+            // Prefer password for REGISTER; a1-hash alone is fine too. Emit both when available.
             if ($ha1 !== '') {
-                $params .= '<param name="a1-hash" value="' . $this->x($ha1) . '"/>';
+                $params .= "          <param name=\"a1-hash\" value=\"" . $this->x($ha1) . "\"/>\n";
             }
             if ($plain !== '') {
-                $params .= '<param name="password" value="' . $this->x($plain) . '"/>';
+                $params .= "          <param name=\"password\" value=\"" . $this->x($plain) . "\"/>\n";
             }
         }
         $media = MediaPolicy::resolve(
@@ -157,21 +163,23 @@ final class FreeswitchXmlController
             'auto' => '',
             default => 'rfc2833',
         };
-        $vars = '<variable name="user_context" value="ownswitch"/>'
-            . '<variable name="os_sip_user" value="' . $this->x($user) . '"/>'
-            . '<variable name="os_media_policy" value="' . $this->x($media) . '"/>'
-            . '<variable name="bypass_media" value="' . $bypass . '"/>';
+        $vars = "          <variable name=\"user_context\" value=\"ownswitch\"/>\n"
+            . "          <variable name=\"os_sip_user\" value=\"" . $this->x($user) . "\"/>\n"
+            . "          <variable name=\"os_media_policy\" value=\"" . $this->x($media) . "\"/>\n"
+            . "          <variable name=\"bypass_media\" value=\"" . $bypass . "\"/>\n";
         if ($dtmf !== '') {
-            $vars .= '<variable name="dtmf_type" value="' . $this->x($dtmf) . '"/>';
+            $vars .= "          <variable name=\"dtmf_type\" value=\"" . $this->x($dtmf) . "\"/>\n";
         }
         if (strtolower((string) ($row['dtmf_pass'] ?? 'yes')) === 'no') {
-            $vars .= '<variable name="drop_dtmf" value="true"/>';
+            $vars .= "          <variable name=\"drop_dtmf\" value=\"true\"/>\n";
         }
-        return '<user id="' . $this->x($user) . '">'
-            . '<params>' . $params
-            . '<param name="dial-string" value="{presence_id=' . $this->x($user) . '@${dialed_domain}}${sofia_contact(${dialed_user}@${dialed_domain})}"/>'
-            . '</params>'
-            . '<variables>' . $vars . '</variables></user>';
+        // Domain-level dial-string is enough; avoid duplicate user dial-string.
+        return "      <user id=\"" . $this->x($user) . "\">\n"
+            . "        <params>\n" . $params
+            . "        </params>\n"
+            . "        <variables>\n" . $vars
+            . "        </variables>\n"
+            . "      </user>\n";
     }
 
     private function authorized(Request $r): bool
