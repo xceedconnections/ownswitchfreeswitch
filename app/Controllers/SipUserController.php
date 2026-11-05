@@ -51,6 +51,38 @@ final class SipUserController extends CrudController
         }
     }
 
+    /**
+     * Active CallerID groups the actor may assign: global groups, plus groups bound to customers in scope.
+     *
+     * @return array<string,string>
+     */
+    private function callerIdGroupOptions(Request $r): array
+    {
+        $out = ['' => '— None —'];
+        try {
+            $scope = $this->scope($r);
+            if ($scope->isGlobal()) {
+                $st = $this->db()->query("SELECT id, name FROM callerid_groups WHERE status = 'active' ORDER BY name LIMIT 500");
+            } else {
+                $st = $this->db()->prepare(
+                    "SELECT g.id, g.name FROM callerid_groups g
+                     LEFT JOIN customers c ON c.id = g.customer_id
+                     WHERE g.status = 'active'
+                       AND (g.customer_id IS NULL OR g.customer_id = ? OR c.reseller_id = ?)
+                     ORDER BY g.name LIMIT 500"
+                );
+                $resellerId = $scope->role === 'reseller' ? ($scope->resellerId ?? 0) : 0;
+                $st->execute([$scope->isCustomerRole() ? ($scope->customerId ?? 0) : 0, $resellerId]);
+            }
+            foreach ($st->fetchAll() as $g) {
+                $out[(string) $g['id']] = (string) $g['name'];
+            }
+        } catch (\Throwable) {
+            // table not migrated yet
+        }
+        return $out;
+    }
+
     private function ensureSipDncColumn(): void
     {
         try {
@@ -148,7 +180,15 @@ final class SipUserController extends CrudController
                 'type' => 'select',
                 'options' => SipPeerOptions::CALLER_ID_MODE,
                 'default' => 'passthrough',
-                'help' => 'Passthrough = whatever ViciDial/Eyebeam sends. Fixed = portal CallerID number. Display Name = use softphone Display Name as CLI (digits).',
+                'help' => 'Passthrough = whatever ViciDial/Eyebeam sends. Fixed = portal CallerID number. Display Name = softphone Display Name as CLI (digits). RPID = take the CLI from the Remote-Party-ID header. PAI = take the CLI from the P-Asserted-Identity header.',
+                'section' => 'CLI and dial format',
+            ],
+            [
+                'name' => 'callerid_group_id',
+                'label' => 'CallerID group',
+                'type' => 'select',
+                'options' => $this->callerIdGroupOptions($r),
+                'help' => 'Optional. Picks the outbound CLI from the group by dialled prefix (see Clients → CallerID). Leave empty to use the CallerID mode above.',
                 'section' => 'CLI and dial format',
             ],
             [
@@ -514,6 +554,23 @@ final class SipUserController extends CrudController
                 if (!isset($opts[(string) $data['dnc_group_id']])) {
                     throw new \DomainException('Select a valid DNC group.');
                 }
+            }
+        }
+
+        $gid = $data['callerid_group_id'] ?? null;
+        if ($gid === null || $gid === '' || (int) $gid <= 0) {
+            $data['callerid_group_id'] = null;
+        } else {
+            $data['callerid_group_id'] = (int) $gid;
+            if (!isset($this->callerIdGroupOptions($r)[(string) $data['callerid_group_id']])) {
+                throw new \DomainException('Select a valid CallerID group.');
+            }
+            $gst = $this->db()->prepare('SELECT customer_id FROM callerid_groups WHERE id = ?');
+            $gst->execute([$data['callerid_group_id']]);
+            $groupCustomer = $gst->fetchColumn();
+            $ownerCustomer = (int) ($data['customer_id'] ?? ($existing['customer_id'] ?? 0));
+            if ($groupCustomer !== false && $groupCustomer !== null && (int) $groupCustomer !== $ownerCustomer) {
+                throw new \DomainException('This CallerID group belongs to a different customer.');
             }
         }
 

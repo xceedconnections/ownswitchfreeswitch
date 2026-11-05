@@ -11,7 +11,7 @@ $cell = static function (array $f, mixed $v): string {
     if (($f['type'] ?? '') === 'select' && isset($f['options'][$v])) {
         $label = (string) ($f['list_options'][$v] ?? $f['options'][$v]);
         if ($f['name'] === 'status') {
-            $cls = ['active' => 'success', 'suspended' => 'warning', 'disabled' => 'secondary', 'closed' => 'dark'][$v] ?? 'secondary';
+            $cls = ['active' => 'success', 'suspended' => 'warning', 'disabled' => 'secondary', 'closed' => 'dark', 'unused' => 'success', 'used' => 'primary'][$v] ?? 'secondary';
             return '<span class="badge text-bg-' . e($cls) . '">' . e($label) . '</span>';
         }
         return e($label);

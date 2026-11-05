@@ -18,6 +18,8 @@ final class Menu
     public const DID_STAFF = ['super_admin', 'admin', 'reseller'];
     public const DID_VIEW = ['super_admin', 'admin', 'reseller', 'customer_owner', 'customer_tech'];
     public const CUSTOMER_RATES = ['customer_owner', 'customer_tech'];
+    /** Customer-login roles (self-service billing such as voucher redemption). */
+    public const CUSTOMER = ['customer_owner', 'customer_tech'];
 
     /** @return list<array{label:string,items:list<array{label:string,path:string}>}> */
     public static function for(string $role): array
@@ -28,7 +30,8 @@ final class Menu
                 ['Resellers', '/resellers', self::STAFF],
                 ['SIP Users', '/sip-users', self::SIP_USERS],
                 ['Calls Online', '/calls-online', self::SIP_USERS],
-                ['CallerID', '/ip-auth', self::SIP_USERS],
+                ['IP Endpoints', '/ip-endpoints', self::SIP_USERS],
+                ['CallerID', '/callerid-groups', self::STAFF],
             ]],
             ['DIDs', [
                 ['DID Providers', '/did-providers', self::DID_STAFF],
@@ -39,6 +42,8 @@ final class Menu
                 ['Refills', '/billing/refill', self::STAFF],
                 ['Payments', '/payments', self::FINANCE],
                 ['Statements', '/statements', self::LEDGER_READ],
+                ['Vouchers', '/vouchers', self::STAFF],
+                ['Redeem voucher', '/billing/redeem-voucher', self::CUSTOMER],
                 ['Billing Preview', '/billing/preview', self::STAFF],
             ]],
             ['Rates', [

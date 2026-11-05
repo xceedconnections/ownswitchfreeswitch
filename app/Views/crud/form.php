@@ -184,3 +184,4 @@ $formExtra = $sipAuthForm ? ' data-os-sip-auth' : '';
         <?php endif; ?>
     </div>
 <?php if ($viewOnly): ?></div><?php else: ?></form><?php endif; ?>
+<?php if (!empty($afterFormPartial) && $existing !== null && preg_match('#^[a-z0-9_/\-]+$#i', (string) $afterFormPartial)) { require __DIR__ . '/../' . $afterFormPartial . '.php'; } ?>

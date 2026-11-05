@@ -6,6 +6,7 @@ use Ownswitch\Controllers\AuditLogController;
 use Ownswitch\Controllers\AuthController;
 use Ownswitch\Controllers\BillingController;
 use Ownswitch\Controllers\CarrierController;
+use Ownswitch\Controllers\CallerIdGroupController;
 use Ownswitch\Controllers\CdrController;
 use Ownswitch\Controllers\CustomRateController;
 use Ownswitch\Controllers\CustomerController;
@@ -31,6 +32,8 @@ use Ownswitch\Controllers\ResellerController;
 use Ownswitch\Controllers\RoutingController;
 use Ownswitch\Controllers\SettingsController;
 use Ownswitch\Controllers\VersionController;
+use Ownswitch\Controllers\VoucherController;
+use Ownswitch\Controllers\VoucherRedeemController;
 use Ownswitch\Controllers\SipUserController;
 use Ownswitch\Controllers\StatsController;
 use Ownswitch\Controllers\StatementController;
@@ -100,7 +103,18 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $callsOnline = new CallsOnlineController();
     $r->get('/calls-online', [$callsOnline, 'index'], [$role(Menu::SIP_USERS)]);
     $r->post('/calls-online/hangup', [$callsOnline, 'hangup'], [$role(Menu::SIP_USERS)]);
-    $crud($r, '/ip-auth', new IpAuthController(), $role(Menu::SIP_USERS)); // CallerID / IP allowlist
+    $crud($r, '/ip-endpoints', new IpAuthController(), $role(Menu::SIP_USERS)); // IP allowlist
+    // Legacy /ip-auth bookmarks
+    $r->get('/ip-auth', static fn () => Response::redirect(url('/ip-endpoints')));
+    $r->get('/ip-auth/create', static fn () => Response::redirect(url('/ip-endpoints/create')));
+    $r->get('/ip-auth/{id}/edit', static function ($req, array $p) {
+        return Response::redirect(url('/ip-endpoints/' . (int) $p['id'] . '/edit'));
+    });
+    $r->get('/ip-auth/{rest}', static fn () => Response::redirect(url('/ip-endpoints')));
+    $cidGroups = new CallerIdGroupController();
+    $crud($r, '/callerid-groups', $cidGroups, $STAFF);
+    $r->post('/callerid-groups/{id}/numbers', [$cidGroups, 'addNumber'], [$STAFF]);
+    $r->post('/callerid-groups/{id}/numbers/{numberId}/delete', [$cidGroups, 'deleteNumber'], [$STAFF]);
     $r->get('/my-rates', [MyRatesController::class, 'index'], [$role(Menu::CUSTOMER_RATES)]);
 
     // DIDs (inbound)
@@ -227,6 +241,10 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $r->get('/billing/refill', [$bill, 'topupForm'], [$STAFF]);
     $r->post('/billing/refill', [$bill, 'topup'], [$STAFF]);
     $r->get('/billing/topup', static fn () => Response::redirect(url('/billing/refill')));
+    $crud($r, '/vouchers', new VoucherController(), $STAFF);
+    $redeem = new VoucherRedeemController();
+    $r->get('/billing/redeem-voucher', [$redeem, 'form'], [$role(Menu::CUSTOMER)]);
+    $r->post('/billing/redeem-voucher', [$redeem, 'redeem'], [$role(Menu::CUSTOMER)]);
     $pay = new PaymentController();
     $r->get('/payments', [$pay, 'index'], [$role(Menu::FINANCE)]);
     $r->get('/payments/create', [$pay, 'create'], [$role(Menu::RESELLER_UP)]);

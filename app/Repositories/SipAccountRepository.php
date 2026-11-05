@@ -18,7 +18,7 @@ final class SipAccountRepository extends BaseRepository
                 'caller_id', 'caller_id_mode', 'cid_min_len', 'cid_max_len',
                 'sip_host', 'connection_mode', 'sip_port', 'codecs', 'disallow', 'nat', 'directmedia', 'qualify',
                 'routing_plan_id', 'dtmfmode', 'dtmf_pass', 'insecure', 'peer_type', 'allowtransfer',
-                'max_channels', 'max_cps', 'max_call_duration', 'rate_cap', 'dst_format', 'dnc_group_id', 'media_policy', 'status', 'notes', 'password_changed_at',
+                'max_channels', 'max_cps', 'max_call_duration', 'rate_cap', 'dst_format', 'dnc_group_id', 'callerid_group_id', 'media_policy', 'status', 'notes', 'password_changed_at',
             ],
             'owned',
             ['username', 'caller_id'],

@@ -28,6 +28,8 @@ final class SipPeerOptions
         'passthrough' => 'Passthrough (ViciDial / softphone From)',
         'fixed' => 'Fixed portal CallerID',
         'display_name' => 'Softphone Display Name as CallerID',
+        'rpid' => 'Remote-Party-ID header (RPID)',
+        'pai' => 'P-Asserted-Identity header (PAI)',
     ];
 
     public const PEER_TYPE = [
