@@ -255,36 +255,50 @@ final class FreeswitchProvisioner
     }
 
     /**
-     * @return array<string,array{contact:string,received:string,expires:int,latency_ms:int}>
+     * Softphone/user REGISTERs on Sofia profiles (external hosts softphones here).
+     *
+     * @return array<string,array{contact:string,received:string,expires:int,latency_ms:int,state:string}>
      */
     public function registeredContacts(): array
     {
-        try {
-            $body = $this->esl()->api('sofia xmlstatus profile external reg');
-        } catch (\Throwable $e) {
-            error_log('[ownswitch] sofia reg: ' . $e->getMessage());
-            return [];
-        }
-        $sx = @simplexml_load_string($body);
-        if ($sx === false) {
-            return [];
-        }
         $out = [];
-        foreach ($sx->xpath('//registration') ?: [] as $reg) {
-            $user = (string) ($reg->user ?? '');
-            $name = strtolower(trim(explode('@', $user, 2)[0] ?? ''));
-            if ($name === '') {
+        foreach (['external', 'internal'] as $profile) {
+            try {
+                $body = $this->esl()->api('sofia xmlstatus profile ' . $profile . ' reg');
+            } catch (\Throwable $e) {
+                error_log('[ownswitch] sofia reg ' . $profile . ': ' . $e->getMessage());
                 continue;
             }
-            $contact = (string) ($reg->contact ?? '');
-            $ip = (string) ($reg->{'network-ip'} ?? '');
-            $ms = $this->pingToMs((string) ($reg->{'ping-time'} ?? ''));
-            $out[$name] = [
-                'contact' => $contact,
-                'received' => $ip,
-                'expires' => 3600,
-                'latency_ms' => $ms,
-            ];
+            if ($body === '' || stripos($body, 'Invalid Profile') !== false) {
+                continue;
+            }
+            $sx = @simplexml_load_string($body);
+            if ($sx === false) {
+                continue;
+            }
+            foreach ($sx->xpath('//registration') ?: [] as $reg) {
+                $user = (string) ($reg->user ?? $reg->{'sip-auth-user'} ?? '');
+                $name = strtolower(trim(explode('@', $user, 2)[0] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+                $status = (string) ($reg->status ?? '');
+                $expSecs = 0;
+                if (preg_match('/expsecs?\((\d+)\)/i', $status, $m)) {
+                    $expSecs = (int) $m[1];
+                }
+                // expires = unix time when registration ends (0 = unknown / treat as live)
+                $expiresAt = $expSecs > 0 ? time() + $expSecs : 0;
+                $pingStatus = strtolower(trim((string) ($reg->{'ping-status'} ?? '')));
+                $ms = $this->pingToMs((string) ($reg->{'ping-time'} ?? ''));
+                $out[$name] = [
+                    'contact' => (string) ($reg->contact ?? ''),
+                    'received' => (string) ($reg->{'network-ip'} ?? ''),
+                    'expires' => $expiresAt,
+                    'latency_ms' => $ms,
+                    'state' => ($pingStatus === '' || $pingStatus === 'reachable') ? 'REGED' : strtoupper($pingStatus),
+                ];
+            }
         }
         return $out;
     }

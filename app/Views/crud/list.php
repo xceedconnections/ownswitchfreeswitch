@@ -47,21 +47,25 @@ $cell = static function (array $f, mixed $v): string {
     if (($f['name'] ?? '') === 'presence') {
         $online = false;
         $ms = null;
+        $state = '';
         if (is_array($v)) {
             $online = !empty($v['online']);
             $ms = isset($v['ms']) && is_numeric($v['ms']) ? (int) $v['ms'] : null;
+            $state = trim((string) ($v['state'] ?? ''));
         } elseif (is_string($v)) {
-            $online = in_array($v, ['registered', 'online', 'Active', 'reachable'], true);
+            $online = in_array($v, ['registered', 'online', 'Active', 'reachable', 'REGED'], true);
+            $state = $online ? 'REGED' : '';
         }
         $dot = $online
-            ? '<span class="os-presence-dot os-presence-dot--on" title="Online" aria-label="Online"></span>'
-            : '<span class="os-presence-dot os-presence-dot--off" title="Offline" aria-label="Offline"></span>';
-        if ($online && $ms !== null) {
+            ? '<span class="os-presence-dot os-presence-dot--on" title="' . e($state !== '' ? $state : 'Online') . '" aria-label="Online"></span>'
+            : '<span class="os-presence-dot os-presence-dot--off" title="' . e($state !== '' ? $state : 'Offline') . '" aria-label="Offline"></span>';
+        if ($online && $ms !== null && $ms > 0) {
             $cls = $ms < 80 ? 'success' : ($ms < 200 ? 'warning' : 'danger');
             return '<span class="os-presence">' . $dot . ' <span class="os-mono text-' . $cls . '">' . e((string) $ms) . ' ms</span></span>';
         }
         if ($online) {
-            return '<span class="os-presence">' . $dot . ' <span class="small text-muted">ok</span></span>';
+            $lbl = $state !== '' ? $state : 'REGED';
+            return '<span class="os-presence">' . $dot . ' <span class="small text-muted">' . e($lbl) . '</span></span>';
         }
         return '<span class="os-presence">' . $dot . ' <span class="small text-muted">offline</span></span>';
     }

@@ -415,8 +415,10 @@ final class SipUserController extends CrudController
 
             $online = false;
             $ms = null;
+            $state = '';
 
             if ($reg !== null) {
+                // expires is unix expiry from Sofia expsecs(); 0 means unknown → keep.
                 $exp = (int) ($reg['expires'] ?? 0);
                 if ($exp > 0 && $exp <= time()) {
                     $reg = null;
@@ -425,26 +427,37 @@ final class SipUserController extends CrudController
 
             $isDynamic = $peerIps === [];
             if ($reg !== null) {
-                // Sofia REGISTER = live for Dynamic users.
+                // Sofia REGISTER = live (same idea as trunk REGED).
                 $online = true;
-                $fromOs = (int) ($reg['latency_ms'] ?? 0);
-                if ($fromOs > 0) {
-                    $ms = $fromOs;
+                $state = (string) ($reg['state'] ?? 'REGED');
+                if ($state === '') {
+                    $state = 'REGED';
+                }
+                $fromFs = (int) ($reg['latency_ms'] ?? 0);
+                if ($fromFs > 0) {
+                    $ms = $fromFs;
                 }
             } elseif ($qualify && !$isDynamic) {
                 // Fixed-IP peer(s): OPTIONS the first IP for Live column.
                 $ms = SipOptionsProbe::rttMs($peerIps[0], $port, 1.5, $user);
                 $online = $ms !== null;
+                $state = $online ? 'REACHABLE' : '';
             }
 
+            // Same shape as trunk Live column: green/red + REGED / ms.
             $row['presence'] = [
                 'online' => $online,
                 'ms' => $ms,
+                'state' => $state,
                 'contact' => $reg['contact'] ?? '',
                 'received' => $reg['received'] ?? '',
             ];
             $row['reg_status'] = $online ? 'registered' : 'offline';
-            $row['latency_ms'] = $ms !== null ? $ms : ($online ? 'reg' : 'n/a');
+            $row['latency_ms'] = [
+                'online' => $online,
+                'ms' => $ms,
+                'state' => $state !== '' ? $state : ($online ? 'REGED' : 'offline'),
+            ];
         }
         unset($row);
         return $rows;
