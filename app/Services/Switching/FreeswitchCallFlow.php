@@ -12,6 +12,8 @@ use Ownswitch\Services\Billing\RatingService;
 use Ownswitch\Services\Cdr\CdrIngestService;
 use Ownswitch\Services\Billing\RateResolver;
 use Ownswitch\Services\Settings\SettingsService;
+use Ownswitch\Services\Routing\RouteSimulator;
+use Ownswitch\Services\Routing\TrunkHourStatsService;
 use Ownswitch\Support\Destination;
 use Ownswitch\Support\DstFormat;
 use Ownswitch\Support\MediaPolicy;
@@ -107,7 +109,7 @@ final class FreeswitchCallFlow
 
         $bridges = [];
         foreach ($trunks as $t) {
-            $cidNum = $this->outboundCallerId($account, $t, $inboundCid);
+            $cidNum = $this->outboundCallerId($account, $t, $inboundCid, $dest);
             if ($this->callerIdLengthReject($account, $t, $cidNum)) {
                 continue; // try next trunk / reject if none remain
             }
@@ -173,6 +175,7 @@ final class FreeswitchCallFlow
             . '<action application="set" data="continue_on_fail=' . $this->x($failCodes) . '"/>'
             . '<action application="set" data="fail_on_single_reject=false"/>'
             . '<action application="set" data="os_sip_user=' . $this->x($userName) . '"/>'
+            . '<action application="set" data="os_direction=outbound"/>'
             . '<action application="set" data="os_media_policy=' . $this->x($media) . '"/>'
             . $dtmfActs
             . $limit
@@ -239,22 +242,57 @@ final class FreeswitchCallFlow
         if (!in_array($mediaPol, MediaPolicy::CHOICES, true)) {
             $mediaPol = '';
         }
+        $direction = 'outbound';
+        $ctx = strtolower((string) ($vars['context'] ?? $vars['os_direction'] ?? ''));
+        if (str_contains($ctx, 'inbound') || str_contains($ctx, 'did') || !empty($vars['os_did_inbound'])) {
+            $direction = 'inbound-did';
+        }
+        $hangupInit = $this->mapHangupInitiator(
+            (string) ($vars['sip_hangup_disposition'] ?? ''),
+            $cause
+        );
         $svc->ingest([
             'external_cdr_key' => $uuid !== '' ? $uuid : md5($xml),
             'uuid' => $uuid,
             'disposition' => $disp,
             'dst' => $dest,
             'src' => $src,
-            'username' => $src,
+            'username' => (string) ($vars['os_sip_user'] ?? $src),
             'sip_call_id' => (string) ($vars['sip_call_id'] ?? $uuid),
             'setup_at' => $start !== '' ? $start : gmdate('Y-m-d H:i:s'),
             'duration' => (string) max(0, $bill),
             'carrier_trunk_id' => $trunkId,
-            'source_ip' => (string) ($vars['sip_network_ip'] ?? ''),
+            'source_ip' => (string) ($vars['sip_network_ip'] ?? $vars['sip_received_ip'] ?? ''),
+            'direction' => $direction,
+            'hangup_initiator' => $hangupInit,
+            'hangup_cause' => $cause !== '' ? $cause : null,
+            'failure_reason' => $bill > 0 ? null : ($cause !== '' ? $cause : null),
             'media_policy_requested' => $mediaPol !== '' ? $mediaPol : null,
             'media_policy_actual' => $mediaPol !== '' ? $mediaPol : null,
             'recording_status' => $mediaPol === 'record' ? 'pending' : null,
         ], 'freeswitch');
+    }
+
+    /** Map FreeSWITCH sip_hangup_disposition / hangup cause to caller|callee|system. */
+    private function mapHangupInitiator(string $disposition, string $cause): string
+    {
+        $d = strtolower(trim($disposition));
+        if ($d !== '') {
+            if (str_contains($d, 'recv_bye') || str_contains($d, 'recv_cancel') || str_contains($d, 'recv_refuse')) {
+                return 'callee';
+            }
+            if (str_contains($d, 'send_bye') || str_contains($d, 'send_cancel') || str_contains($d, 'send_refuse')) {
+                return 'caller';
+            }
+        }
+        $c = strtoupper($cause);
+        if (in_array($c, ['ORIGINATOR_CANCEL', 'CALL_REJECTED', 'USER_BUSY', 'NO_ANSWER', 'NO_USER_RESPONSE'], true)) {
+            return 'caller';
+        }
+        if (in_array($c, ['NORMAL_CLEARING', 'ALLOTTED_TIMEOUT', 'MANAGER_REQUEST'], true)) {
+            return 'system';
+        }
+        return $d !== '' ? $d : 'system';
     }
 
     /** @param array<string,mixed> $account @param array<string,mixed> $trunk */
@@ -281,6 +319,15 @@ final class FreeswitchCallFlow
             $vars[] = 'origination_caller_id_number=' . $effectiveCid;
             $vars[] = 'origination_caller_id_name=' . $effectiveCid;
             $vars[] = 'effective_caller_id_number=' . $effectiveCid;
+            $mode = strtolower(trim((string) ($account['caller_id_mode'] ?? 'passthrough')));
+            // Stamp RPID / PAI with the same CLI when mode or CallerID group requires them.
+            $stampHeaders = (int) ($account['callerid_group_id'] ?? 0) > 0
+                || in_array($mode, ['rpid', 'pai', 'fixed', 'display_name'], true);
+            $hdrHost = $fromDomain !== '' ? $fromDomain : 'anonymous.invalid';
+            if ($stampHeaders) {
+                $vars[] = 'sip_h_Remote-Party-ID=<sip:' . $effectiveCid . '@' . $hdrHost . '>;party=calling;privacy=off;screen=yes';
+                $vars[] = 'sip_h_P-Asserted-Identity=<sip:' . $effectiveCid . '@' . $hdrHost . '>';
+            }
         }
         if ($fromUser !== '') {
             $vars[] = 'sip_invite_from_user=' . $fromUser;
@@ -298,21 +345,29 @@ final class FreeswitchCallFlow
 
     /**
      * Resolve outbound CallerID digits before trunk From-user override.
+     * CallerID group longest-prefix on dialed DST overrides mode number source.
      *
      * @param array<string,mixed> $account
      * @param array<string,mixed> $trunk
-     * @param array{number:string,name:string} $inbound
+     * @param array{number:string,name:string,rpid:string,pai:string} $inbound
      */
-    private function outboundCallerId(array $account, array $trunk, array $inbound): string
+    private function outboundCallerId(array $account, array $trunk, array $inbound, string $dest = ''): string
     {
+        $groupCli = $this->callerIdFromGroup((int) ($account['callerid_group_id'] ?? 0), $dest);
         $mode = strtolower(trim((string) ($account['caller_id_mode'] ?? 'passthrough')));
         $portalCid = $this->digitsOnly(trim((string) ($account['caller_id'] ?? '')));
 
-        $cid = match ($mode) {
-            'fixed' => $portalCid,
-            'display_name' => $this->digitsOnly($inbound['name'] !== '' ? $inbound['name'] : $inbound['number']),
-            default => $inbound['number'] !== '' ? $inbound['number'] : $portalCid, // passthrough
-        };
+        if ($groupCli !== '') {
+            $cid = $groupCli;
+        } else {
+            $cid = match ($mode) {
+                'fixed' => $portalCid,
+                'display_name' => $this->digitsOnly($inbound['name'] !== '' ? $inbound['name'] : $inbound['number']),
+                'rpid' => $inbound['rpid'] !== '' ? $inbound['rpid'] : ($inbound['number'] !== '' ? $inbound['number'] : $portalCid),
+                'pai' => $inbound['pai'] !== '' ? $inbound['pai'] : ($inbound['number'] !== '' ? $inbound['number'] : $portalCid),
+                default => $inbound['number'] !== '' ? $inbound['number'] : $portalCid,
+            };
+        }
 
         $rem = trim((string) ($trunk['cid_remove_prefix'] ?? ''));
         if ($rem !== '' && $cid !== '' && str_starts_with($cid, $rem)) {
@@ -326,7 +381,45 @@ final class FreeswitchCallFlow
         return $cid;
     }
 
-    /** @param array{number:string,name:string} */
+    /** Longest-prefix match on dialed destination within an assigned CallerID group. */
+    private function callerIdFromGroup(int $groupId, string $dest): string
+    {
+        if ($groupId <= 0 || $dest === '') {
+            return '';
+        }
+        try {
+            $st = $this->db->prepare(
+                "SELECT prefix, cli_number FROM callerid_group_numbers
+                 WHERE callerid_group_id = ? AND status = 'active'
+                 ORDER BY CHAR_LENGTH(prefix) DESC, id ASC"
+            );
+            $st->execute([$groupId]);
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable) {
+            return '';
+        }
+        $fallback = '';
+        foreach ($rows as $row) {
+            $pfx = (string) ($row['prefix'] ?? '');
+            $cli = $this->digitsOnly(trim((string) ($row['cli_number'] ?? '')));
+            if ($cli === '') {
+                continue;
+            }
+            if ($pfx === '*' || $pfx === '') {
+                if ($fallback === '') {
+                    $fallback = $cli;
+                }
+                continue;
+            }
+            $digits = preg_replace('/\D+/', '', $pfx) ?? '';
+            if ($digits !== '' && str_starts_with($dest, $digits)) {
+                return $cli;
+            }
+        }
+        return $fallback;
+    }
+
+    /** @return array{number:string,name:string,rpid:string,pai:string} */
     private function inboundCallerId(Request $r): array
     {
         $number = '';
@@ -343,7 +436,27 @@ final class FreeswitchCallFlow
             }
         }
         $name = trim((string) $r->input('Caller-Caller-ID-Name', $r->input('variable_sip_from_display', '')));
-        return ['number' => $number, 'name' => $name];
+        $rpid = $this->digitsFromSipUri((string) $r->input('variable_sip_h_Remote-Party-ID', $r->input('variable_sip_h_remote-party-id', '')));
+        if ($rpid === '') {
+            $rpid = $this->digitsFromSipUri((string) $r->input('variable_sip_remote_party_id', ''));
+        }
+        $pai = $this->digitsFromSipUri((string) $r->input('variable_sip_h_P-Asserted-Identity', $r->input('variable_sip_h_p-asserted-identity', '')));
+        if ($pai === '') {
+            $pai = $this->digitsFromSipUri((string) $r->input('variable_sip_p_asserted_identity', ''));
+        }
+        return ['number' => $number, 'name' => $name, 'rpid' => $rpid, 'pai' => $pai];
+    }
+
+    private function digitsFromSipUri(string $raw): string
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+        if (preg_match('/sip:([^@>;\s]+)/i', $raw, $m)) {
+            return $this->digitsOnly($m[1]);
+        }
+        return $this->digitsOnly($raw);
     }
 
     private function digitsOnly(string $raw): string
@@ -637,8 +750,19 @@ final class FreeswitchCallFlow
         if ($planId <= 0) {
             return [];
         }
+        $strategy = 'priority';
+        try {
+            $ps = $this->db->prepare("SELECT strategy FROM routing_plans WHERE id = ? AND status = 'active' LIMIT 1");
+            $ps->execute([$planId]);
+            $s = $ps->fetchColumn();
+            if (is_string($s) && $s !== '') {
+                $strategy = $s;
+            }
+        } catch (\Throwable) {
+        }
         $st = $this->db->prepare(
-            "SELECT t.* FROM routing_rules r
+            "SELECT t.*, r.id AS rule_id, r.prefix AS rule_prefix, r.priority
+             FROM routing_rules r
              JOIN carrier_trunks t ON t.id = r.carrier_trunk_id
              JOIN carriers ca ON ca.id = t.carrier_id AND ca.status = 'active'
              WHERE r.routing_plan_id = ? AND r.status = 'active' AND t.status = 'active'
@@ -649,7 +773,8 @@ final class FreeswitchCallFlow
         $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
         $groups = [];
         foreach ($rows as $row) {
-            $len = ($row['prefix'] ?? '*') === '*' ? 0 : strlen((string) $row['prefix']);
+            $pfx = (string) ($row['rule_prefix'] ?? $row['prefix'] ?? '*');
+            $len = $pfx === '*' ? 0 : strlen($pfx);
             $groups[$len][] = $row;
         }
         krsort($groups);
@@ -661,9 +786,44 @@ final class FreeswitchCallFlow
                 }
                 $out[] = $row;
             }
-            if ($out !== []) {
-                return $out;
+            if ($out === []) {
+                continue;
             }
+            // Enrich for LCR / ASR ordering (same helpers as RouteSimulator).
+            $rules = [];
+            $resolver = new RateResolver($this->db, new SettingsService($this->db));
+            $rating = new RatingService();
+            foreach ($out as $row) {
+                $tid = (int) ($row['id'] ?? 0);
+                $buy = $tid > 0 ? $resolver->carrier($tid, $dest) : null;
+                $sample = $buy
+                    ? $rating->rate($buy['rate'], $buy['initial'], $buy['subsequent'], 60, $buy['connect_fee'])['total']
+                    : null;
+                $rules[] = [
+                    'rule_id' => (int) ($row['rule_id'] ?? 0),
+                    'priority' => (int) ($row['priority'] ?? 100),
+                    'trunk_id' => $tid,
+                    'carrier_sample_cost' => $sample,
+                    'hour_asr' => -1.0,
+                    'hour_attempts' => 0,
+                    '_trunk' => $row,
+                ];
+            }
+            if ($strategy === 'asr') {
+                $stats = (new TrunkHourStatsService($this->db))->lastHour(array_map(static fn ($r) => (int) $r['trunk_id'], $rules));
+                foreach ($rules as &$rr) {
+                    $sid = (string) (int) $rr['trunk_id'];
+                    $rr['hour_asr'] = $stats[$sid]['asr'] ?? -1.0;
+                    $rr['hour_attempts'] = $stats[$sid]['attempts'] ?? 0;
+                }
+                unset($rr);
+            }
+            $ordered = RouteSimulator::order($rules, $strategy);
+            $final = [];
+            foreach ($ordered as $rr) {
+                $final[] = $rr['_trunk'];
+            }
+            return $final;
         }
         return [];
     }

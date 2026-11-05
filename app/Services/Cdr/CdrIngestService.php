@@ -68,7 +68,11 @@ final class CdrIngestService
             'duration_actual' => $duration, 'duration_billable_customer' => 0, 'duration_billable_carrier' => 0,
             'customer_charge' => '0.000000', 'carrier_cost' => '0.000000', 'customer_connect_fee' => '0.000000',
             'carrier_connect_fee' => '0.000000', 'gross_margin' => '0.000000',
-            'sip_response' => $d['sip_response'], 'disposition' => $d['disposition'], 'failure_reason' => $d['failure_reason'],
+            'sip_response' => $d['sip_response'], 'disposition' => $d['disposition'],
+            'direction' => $d['direction'] ?? null,
+            'hangup_initiator' => $d['hangup_initiator'] ?? null,
+            'hangup_cause' => $d['hangup_cause'] ?? null,
+            'failure_reason' => $d['failure_reason'],
             'source_ip' => $d['source_ip'] ?? null,
             'media_ip' => $this->resolveMediaIp($d),
             'media_policy_requested' => $d['media_policy_requested'], 'media_policy_actual' => $d['media_policy_actual'],
@@ -192,6 +196,9 @@ final class CdrIngestService
             'media_policy_requested' => $str($raw['media_policy_requested'] ?? null, 16),
             'media_policy_actual' => $str($raw['media_policy_actual'] ?? null, 16),
             'recording_status' => $str($raw['recording_status'] ?? null, 16),
+            'direction' => $str($raw['direction'] ?? null, 16),
+            'hangup_initiator' => $str($raw['hangup_initiator'] ?? null, 32),
+            'hangup_cause' => $str($raw['hangup_cause'] ?? null, 64),
         ], []];
     }
 

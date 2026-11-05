@@ -75,9 +75,9 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
             <?php if ($canDelete): ?><th style="width:2rem"><input type="checkbox" id="cdr-check-all" aria-label="Select all"></th><?php endif; ?>
             <th>ID</th><th></th><th>Time (<?= e(user_timezone()) ?>)</th>
             <?php if ($customers): ?><th>Customer</th><?php endif; ?>
-            <th>SIP</th><th>CallerID</th><th>Destination</th><th>Description</th><th>Result</th><th>SIP code</th>
-            <th class="os-num">Dur (s)</th><th class="os-num">Billable</th><th>I/S</th><th class="os-num">Charge</th>
-            <?php if ($showCost): ?><th>Trunk</th><th class="os-num">Cost</th><th class="os-num">Margin</th><?php endif; ?>
+            <th>SIP</th><th>Dir</th><th>CallerID</th><th>Destination</th><th>Description</th><th>Result</th><th>SIP code</th>
+            <th class="os-num">Actual</th><th class="os-num">Billed</th><th>Hangup</th><th>IP</th><th>I/S</th><th class="os-num">Charge</th>
+            <?php if ($showCost): ?><th>Provider / Trunk</th><th class="os-num">Cost</th><th class="os-num">Margin</th><?php endif; ?>
         </tr></thead>
         <tbody>
         <?php foreach ($result['rows'] as $c):
@@ -107,6 +107,10 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
                 <td class="os-mono"><?= e(fmt_local((string) $c['setup_at'])) ?></td>
                 <?php if ($customers): ?><td><?= e($c['customer_name'] ?? '—') ?></td><?php endif; ?>
                 <td class="os-mono"><?= e($c['sip_username'] ?? '—') ?></td>
+                <td class="small"><?php
+                    $dir = (string) ($c['direction'] ?? '');
+                    echo e($dir === 'inbound-did' || $dir === 'inbound' ? 'In' : ($dir === 'outbound' ? 'Out' : ($dir !== '' ? $dir : '—')));
+                ?></td>
                 <td class="os-mono"><?= e($c['src'] ?? '—') ?></td>
                 <td class="os-mono"><?= e($c['dst_normalized']) ?></td>
                 <td><?php if (!empty($c['area_description'])): ?><span class="os-area-tag"><?= e((string) $c['area_description']) ?></span><?php else: ?><span class="text-muted">—</span><?php endif; ?></td>
@@ -114,10 +118,16 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
                 <td class="small" title="<?= e($c['sip_code_label'] ?? '') ?>"><?= e($c['sip_code_short'] ?? ($c['sip_response'] ?? '—')) ?></td>
                 <td class="os-num"><?= e($c['duration_actual']) ?></td>
                 <td class="os-num"><?= e($c['duration_billable_customer']) ?></td>
+                <td class="small"><?= e($c['hangup_initiator'] ?? '—') ?></td>
+                <td class="os-mono small"><?= e($c['source_ip'] ?? '—') ?></td>
                 <td class="os-mono"><?= e($c['customer_initial'] ?? '—') ?>/<?= e($c['customer_subsequent'] ?? '—') ?></td>
                 <td class="os-num os-mono"><?= e($c['customer_charge']) ?></td>
                 <?php if ($showCost): ?>
-                    <td><?= e($c['trunk_name'] ?? $c['carrier_name'] ?? '—') ?></td>
+                    <td><?php
+                        $prov = trim((string) ($c['carrier_name'] ?? ''));
+                        $trk = trim((string) ($c['trunk_name'] ?? ''));
+                        echo e($prov !== '' && $trk !== '' ? $prov . ' / ' . $trk : ($trk !== '' ? $trk : ($prov !== '' ? $prov : '—')));
+                    ?></td>
                     <td class="os-num os-mono"><?= e($c['carrier_cost']) ?></td>
                     <td class="os-num os-mono"><?= e($c['gross_margin']) ?></td>
                 <?php endif; ?>

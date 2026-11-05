@@ -169,8 +169,80 @@ final class TariffController extends CrudController
         }
         return [
             'bulkDelete' => true,
+            'bulkRateUpdate' => true,
             'ownerFilter' => ['name' => $ownerKey, 'label' => $ownerLabel, 'options' => $opts],
         ];
+    }
+
+    /** Mass-edit rates: percent change and/or absolute new rate on selected rows. */
+    public function bulkRateUpdate(Request $r, array $p = []): Response
+    {
+        if (!$this->canWrite($r)) {
+            return $this->forbidden();
+        }
+        $raw = $r->input('ids', []);
+        $ids = [];
+        if (is_array($raw)) {
+            $ids = $raw;
+        } elseif (is_string($raw)) {
+            $ids = preg_split('/[\s,]+/', $raw) ?: [];
+        }
+        $idList = array_values(array_unique(array_filter(array_map('intval', $ids), static fn ($i) => $i > 0)));
+        $mode = (string) $r->input('rate_mode', 'percent');
+        $value = trim((string) $r->input('rate_value', ''));
+        $prefix = trim((string) $r->input('prefix_filter', ''));
+        $filters = [];
+        foreach ($this->filterColumns() as $c) {
+            $v = $r->input($c);
+            if (!is_string($v) || $v === '') {
+                $v = $r->query($c);
+            }
+            if (is_string($v) && $v !== '') {
+                $filters[$c] = $v;
+            }
+        }
+        $qRaw = $r->input('q');
+        if (!is_string($qRaw) || $qRaw === '') {
+            $qRaw = $r->query('q');
+        }
+        $q = is_string($qRaw) ? trim($qRaw) : '';
+
+        if ($idList === []) {
+            return $this->redirect($r, $this->base, 'Select at least one row to update.', 'warning');
+        }
+        try {
+            $res = (new \Ownswitch\Services\Billing\BatchRateUpdateService($this->db()))->apply(
+                $this->kind,
+                $this->scope($r),
+                $idList,
+                $mode,
+                $value,
+                $prefix !== '' ? $prefix : null,
+            );
+        } catch (\InvalidArgumentException $e) {
+            return $this->redirect($r, $this->base, $e->getMessage(), 'danger');
+        }
+
+        if ($this->kind === 'customer' && $res['updated'] > 0) {
+            $planIds = $this->planIdsForTariffIds($idList);
+            $ver = new RatePlanRepository($this->db());
+            $uid = (int) ($this->user($r)['id'] ?? 0) ?: null;
+            foreach (array_unique($planIds) as $pid) {
+                if ($pid > 0) {
+                    $ver->createVersion($pid, $uid);
+                }
+            }
+        }
+        $this->audit($r, 'tariff_bulk_rate_update', $this->kind === 'carrier' ? 'carrier_tariffs' : 'rate_plan_tariffs', null, null, [
+            'mode' => $mode, 'value' => $value, 'prefix_filter' => $prefix, 'ids' => $idList, 'updated' => $res['updated'],
+        ]);
+        $qs = http_build_query(array_filter($filters + ($q !== '' ? ['q' => $q] : []), static fn ($v) => $v !== null && $v !== ''));
+        return $this->redirect(
+            $r,
+            $this->base . ($qs !== '' ? '?' . $qs : ''),
+            "Updated {$res['updated']} " . strtolower($this->plural) . '.',
+            $res['updated'] > 0 ? 'success' : 'warning'
+        );
     }
 
     /** Delete selected rows or all rows matching current search/filters. */

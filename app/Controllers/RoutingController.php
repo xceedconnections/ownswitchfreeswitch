@@ -57,7 +57,7 @@ final class RoutingController extends CrudController
         return [
             'priority' => 'Priority',
             'lcr' => 'LCR',
-            'asr' => 'Best connectivity',
+            'asr' => 'Quality-Based Routing (ASR)',
             'random' => 'Random',
         ];
     }
@@ -74,7 +74,7 @@ final class RoutingController extends CrudController
             }
             return [
                 ['name' => 'name', 'label' => 'Name', 'required' => true, 'max' => 120, 'list' => true],
-                ['name' => 'strategy', 'label' => 'Type', 'type' => 'select', 'required' => true, 'options' => $this->strategyOptions(), 'list' => true, 'default' => 'priority', 'help' => 'Priority = your drag order · LCR = cheapest first · Best connectivity = highest answer rate in the selected window · Random = shuffle each call'],
+                ['name' => 'strategy', 'label' => 'Type', 'type' => 'select', 'required' => true, 'options' => $this->strategyOptions(), 'list' => true, 'default' => 'priority', 'help' => 'Priority = drag order · LCR = cheapest first · Quality-Based Routing (ASR) = highest answer rate in the stats window · Random = shuffle each call'],
                 [
                     'name' => 'trunks',
                     'label' => 'Trunks',

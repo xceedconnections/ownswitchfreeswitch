@@ -1,5 +1,7 @@
 <?php
-/** @var list<array> $calls @var ?string $error @var int $count @var array $stats @var array $users @var string $filterUser @var bool $canHangup */
+/** @var list<array> $calls @var ?string $error @var int $count @var array $stats @var array $users @var string $filterUser @var bool $canHangup @var bool $canMonitor @var string $monitorExt */
+$canMonitor = !empty($canMonitor);
+$monitorExt = (string) ($monitorExt ?? '');
 ?>
 <div class="os-page-head">
     <div>
@@ -8,6 +10,20 @@
     </div>
     <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/calls-online' . ($filterUser !== '' ? '?user=' . urlencode($filterUser) : ''))) ?>"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</a>
 </div>
+
+<?php if ($canMonitor): ?>
+<form method="post" action="<?= e(url('/calls-online/monitor-ext')) ?>" class="os-toolbar mb-3">
+    <?= csrf_field() ?>
+    <div class="row g-2 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label small mb-0" for="monitor_ext">Monitor extension (Spy / Whisper / Barge)</label>
+            <input type="text" class="form-control form-control-sm os-mono" id="monitor_ext" name="monitor_ext" value="<?= e($monitorExt) ?>" placeholder="e.g. 1001 or user/1001" maxlength="64">
+        </div>
+        <div class="col-auto"><button class="btn btn-outline-primary btn-sm" type="submit">Save</button></div>
+        <div class="col-auto small text-muted">Admin only · rings your SIP phone into the live call</div>
+    </div>
+</form>
+<?php endif; ?>
 
 <?php if ($error): ?>
     <div class="alert alert-warning"><?= e($error) ?></div>
@@ -55,7 +71,7 @@
     <div class="os-empty"><div class="os-empty-title">No active calls</div><div>Trying, ringing (180/183) and connected dialogs appear here.</div></div>
 <?php else: ?>
     <div class="table-responsive"><table class="table table-sm mb-0 os-table os-rt-table">
-        <thead><tr><th>SIP</th><th>From</th><th>To</th><th>Status</th><th class="os-num">MM:SS</th><th>Call-ID</th><?php if (!empty($canHangup)): ?><th></th><?php endif; ?></tr></thead>
+        <thead><tr><th>SIP</th><th>From</th><th>To</th><th>Status</th><th class="os-num">MM:SS</th><th>Call-ID</th><?php if ($canMonitor || !empty($canHangup)): ?><th></th><?php endif; ?></tr></thead>
         <tbody>
         <?php foreach ($calls as $c):
             $sip = (string) ($c['sip_user'] ?? '');
@@ -69,8 +85,21 @@
                 <td><strong><?= e((string) ($c['state'] ?? '')) ?></strong></td>
                 <td class="os-num os-mono"><?= e(fmt_duration((int) ($c['duration'] ?? 0))) ?></td>
                 <td class="os-mono small text-muted"><?= e(mb_substr((string) ($c['callid'] ?? ''), 0, 40)) ?></td>
-                <?php if (!empty($canHangup)): ?>
-                <td class="text-end">
+                <?php if ($canMonitor || !empty($canHangup)): ?>
+                <td class="text-end text-nowrap">
+                    <?php if ($canMonitor):
+                        $uuid = (string) ($c['dialog'] ?? $c['uuid'] ?? '');
+                        foreach (['spy' => 'Spy', 'whisper' => 'Whisper', 'barge' => 'Barge'] as $m => $lbl): ?>
+                    <form method="post" action="<?= e(url('/calls-online/monitor')) ?>" class="d-inline" data-os-hangup data-confirm="<?= e($lbl) ?> this call? Your extension <?= e($monitorExt !== '' ? $monitorExt : '(set above)') ?> will ring.">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="mode" value="<?= e($m) ?>">
+                        <input type="hidden" name="uuid" value="<?= e($uuid) ?>">
+                        <input type="hidden" name="callid" value="<?= e((string) ($c['callid'] ?? '')) ?>">
+                        <input type="hidden" name="monitor_ext" value="<?= e($monitorExt) ?>">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm" title="<?= e($lbl) ?>" data-once><?= e($lbl) ?></button>
+                    </form>
+                    <?php endforeach; endif; ?>
+                    <?php if (!empty($canHangup)): ?>
                     <form method="post" action="<?= e(url('/calls-online/hangup')) ?>" class="d-inline" data-os-hangup data-confirm="Hang up this call? FreeSWITCH will send BYE to both sides.">
                         <?= csrf_field() ?>
                         <input type="hidden" name="callid" value="<?= e((string) ($c['callid'] ?? '')) ?>">
@@ -78,6 +107,7 @@
                         <input type="hidden" name="dialog_id" value="<?= e((string) ($c['dialog'] ?? '')) ?>">
                         <button type="submit" class="btn btn-outline-danger btn-sm" title="Hang up" data-once><i class="bi bi-telephone-x"></i></button>
                     </form>
+                    <?php endif; ?>
                 </td>
                 <?php endif; ?>
             </tr>

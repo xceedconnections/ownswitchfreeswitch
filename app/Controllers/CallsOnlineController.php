@@ -44,6 +44,15 @@ final class CallsOnlineController extends BaseController
             } catch (\Throwable) {
             }
         }
+        $role = (string) ($this->user($r)['role'] ?? '');
+        $canMonitor = in_array($role, ['super_admin', 'admin'], true);
+        $monitorExt = '';
+        if ($canMonitor) {
+            $monitorExt = trim((string) ($_SESSION['monitor_extension'] ?? ''));
+            if ($monitorExt === '') {
+                $monitorExt = trim((string) $r->query('monitor_ext', ''));
+            }
+        }
         return $this->view('calls/online', [
             'title' => 'Calls Online',
             'calls' => $calls,
@@ -53,7 +62,74 @@ final class CallsOnlineController extends BaseController
             'users' => $users,
             'filterUser' => $filterUser,
             'canHangup' => true,
+            'canMonitor' => $canMonitor,
+            'monitorExt' => $monitorExt,
         ]);
+    }
+
+    /** Persist preferred monitor SIP extension for Spy/Whisper/Barge. */
+    public function saveMonitorExt(Request $r, array $p = []): Response
+    {
+        $role = (string) ($this->user($r)['role'] ?? '');
+        if (!in_array($role, ['super_admin', 'admin'], true)) {
+            return $this->forbidden();
+        }
+        $ext = trim((string) $r->input('monitor_ext', ''));
+        if ($ext !== '' && !preg_match('/^[0-9A-Za-z_@.\-\/]+$/', $ext)) {
+            return $this->redirect($r, '/calls-online', 'Invalid monitor extension.', 'danger');
+        }
+        $_SESSION['monitor_extension'] = $ext;
+        return $this->redirect($r, '/calls-online', $ext !== '' ? 'Monitor extension saved.' : 'Monitor extension cleared.');
+    }
+
+    /** Admin-only Spy / Whisper / Barge into a live channel via FreeSWITCH eavesdrop. */
+    public function monitor(Request $r, array $p = []): Response
+    {
+        $role = (string) ($this->user($r)['role'] ?? '');
+        if (!in_array($role, ['super_admin', 'admin'], true)) {
+            return $this->forbidden();
+        }
+        $mode = strtolower(trim((string) $r->input('mode', 'spy')));
+        if (!in_array($mode, ['spy', 'whisper', 'barge'], true)) {
+            return $this->redirect($r, '/calls-online', 'Invalid monitor mode.', 'danger');
+        }
+        $uuid = trim((string) $r->input('uuid', $r->input('dialog_id', '')));
+        $callId = trim((string) $r->input('callid', ''));
+        $ext = trim((string) $r->input('monitor_ext', ''));
+        if ($ext === '') {
+            $ext = trim((string) ($_SESSION['monitor_extension'] ?? ''));
+        }
+        if ($ext === '') {
+            return $this->redirect($r, '/calls-online', 'Set a monitor extension first (your dialable SIP user).', 'warning');
+        }
+        $_SESSION['monitor_extension'] = $ext;
+
+        $prov = FreeswitchProvisioner::fromConfig();
+        if (!$prov->enabled()) {
+            return $this->redirect($r, '/calls-online', 'FreeSWITCH is not configured.', 'danger');
+        }
+        if ($uuid === '' || !preg_match('/^[0-9a-fA-F-]{36}$/', $uuid)) {
+            [$calls] = $this->loadCalls($r, null);
+            foreach ($calls as $c) {
+                if ($callId !== '' && strcasecmp((string) ($c['callid'] ?? ''), $callId) === 0) {
+                    $uuid = trim((string) ($c['dialog'] ?? $c['uuid'] ?? ''));
+                    break;
+                }
+            }
+        }
+        if ($uuid === '') {
+            return $this->redirect($r, '/calls-online', 'Missing channel UUID for monitoring.', 'danger');
+        }
+        $res = $prov->eavesdropCall($uuid, $ext, $mode);
+        $this->audit($r, 'call_monitor_' . $mode, 'calls_online', null, null, [
+            'uuid' => $uuid, 'callid' => $callId, 'monitor_ext' => $ext,
+        ]);
+        return $this->redirect(
+            $r,
+            '/calls-online',
+            $res['ok'] ? $res['detail'] : ('Monitor failed: ' . $res['detail']),
+            $res['ok'] ? 'success' : 'danger'
+        );
     }
 
     public function hangup(Request $r, array $p = []): Response

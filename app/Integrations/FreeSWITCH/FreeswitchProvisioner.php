@@ -345,6 +345,44 @@ final class FreeswitchProvisioner
     }
 
     /**
+     * Admin Spy / Whisper / Barge via FreeSWITCH eavesdrop.
+     * $monitorExtension is a dialable user (e.g. 1001) or full dialstring (user/1001@domain).
+     *
+     * @return array{ok:bool,detail:string}
+     */
+    public function eavesdropCall(string $targetUuid, string $monitorExtension, string $mode = 'spy'): array
+    {
+        $uuid = trim($targetUuid);
+        if (!preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $uuid)) {
+            return ['ok' => false, 'detail' => 'Invalid channel UUID'];
+        }
+        $ext = trim($monitorExtension);
+        if ($ext === '') {
+            return ['ok' => false, 'detail' => 'Monitor extension required'];
+        }
+        $mode = strtolower($mode);
+        if (!in_array($mode, ['spy', 'whisper', 'barge'], true)) {
+            return ['ok' => false, 'detail' => 'Mode must be spy, whisper, or barge'];
+        }
+        // Accept "1001", "user/1001", or "sofia/internal/1001@domain"
+        if (!str_contains($ext, '/')) {
+            $ext = 'user/' . preg_replace('/[^0-9A-Za-z_\-.]/', '', $ext);
+        }
+        try {
+            $reply = $this->esl()->eavesdrop($uuid, $ext, $mode);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'detail' => $e->getMessage()];
+        }
+        $ok = $reply === '' || str_contains($reply, '+OK') || str_contains(strtolower($reply), 'job-uuid');
+        $label = match ($mode) {
+            'whisper' => 'Whisper',
+            'barge' => 'Barge',
+            default => 'Spy',
+        };
+        return ['ok' => $ok, 'detail' => $ok ? "{$label} started" : ($reply !== '' ? $reply : 'eavesdrop failed')];
+    }
+
+    /**
      * @return array{ok:bool,detail:string}
      */
     public function endDialog(string $callId, ?string $fromTag = null, ?string $dialogId = null): array

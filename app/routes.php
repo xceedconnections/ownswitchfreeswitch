@@ -103,6 +103,8 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $callsOnline = new CallsOnlineController();
     $r->get('/calls-online', [$callsOnline, 'index'], [$role(Menu::SIP_USERS)]);
     $r->post('/calls-online/hangup', [$callsOnline, 'hangup'], [$role(Menu::SIP_USERS)]);
+    $r->post('/calls-online/monitor', [$callsOnline, 'monitor'], [$STAFF]);
+    $r->post('/calls-online/monitor-ext', [$callsOnline, 'saveMonitorExt'], [$STAFF]);
     $crud($r, '/ip-endpoints', new IpAuthController(), $role(Menu::SIP_USERS)); // IP allowlist
     // Legacy /ip-auth bookmarks
     $r->get('/ip-auth', static fn () => Response::redirect(url('/ip-endpoints')));
@@ -136,6 +138,7 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $r->post('/area-codes/import/commit', [$aci, 'commit'], [$STAFF]);
     $tariffs = new TariffController('customer');
     $r->post('/tariffs/bulk-delete', [$tariffs, 'bulkDestroy'], [$STAFF]);
+    $r->post('/tariffs/bulk-rate-update', [$tariffs, 'bulkRateUpdate'], [$STAFF]);
     $crud($r, '/tariffs', $tariffs, $STAFF);
     $crud($r, '/custom-rates', new CustomRateController(), $STAFF);
     $ti = new TariffImportController();
@@ -162,6 +165,7 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $crud($r, '/trunks', new CarrierController('trunk'), $STAFF);
     $providerRates = new TariffController('carrier');
     $r->post('/provider-rates/bulk-delete', [$providerRates, 'bulkDestroy'], [$STAFF]);
+    $r->post('/provider-rates/bulk-rate-update', [$providerRates, 'bulkRateUpdate'], [$STAFF]);
     $crud($r, '/provider-rates', $providerRates, $STAFF);
     $r->get('/carrier-tariffs', static fn () => Response::redirect(url('/provider-rates')));
     $r->get('/carrier-tariffs/create', static fn () => Response::redirect(url('/provider-rates/create')));

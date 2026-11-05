@@ -117,6 +117,7 @@ $colCount = ($hideIdColumn ? 0 : 1) + count($cols) + 1;
 
 <?php
 $bulkDelete = !empty($bulkDelete);
+$bulkRateUpdate = !empty($bulkRateUpdate);
 $ownerFilter = $ownerFilter ?? null;
 ?>
 <form method="get" class="os-toolbar row g-2 align-items-end" action="<?= e(url($base)) ?>">
@@ -161,7 +162,7 @@ $ownerFilter = $ownerFilter ?? null;
             <?php endif; ?>
         </div>
     <?php else: ?>
-        <?php if ($bulkDelete && $canWrite): ?>
+        <?php if (($bulkDelete || $bulkRateUpdate) && $canWrite): ?>
             <form method="post" action="<?= e(url($base . '/bulk-delete')) ?>" id="os-bulk-form">
                 <?= csrf_field() ?>
                 <input type="hidden" name="mode" id="os-bulk-mode" value="selected">
@@ -170,26 +171,33 @@ $ownerFilter = $ownerFilter ?? null;
                     <input type="hidden" name="<?= e((string) $fk) ?>" value="<?= e((string) $fv) ?>">
                 <?php endforeach; ?>
                 <div class="d-flex flex-wrap gap-2 align-items-center px-2 py-2 border-bottom bg-light">
-                    <button type="submit" class="btn btn-outline-danger btn-sm" data-confirm="Delete selected <?= e(strtolower($plural)) ?>? This cannot be undone." onclick="document.getElementById('os-bulk-mode').value='selected'">
+                    <?php if ($bulkDelete): ?>
+                    <button type="submit" class="btn btn-outline-danger btn-sm" data-confirm="Delete selected <?= e(strtolower($plural)) ?>? This cannot be undone." onclick="document.getElementById('os-bulk-mode').value='selected'; this.form.action='<?= e(url($base . '/bulk-delete')) ?>'">
                         <i class="bi bi-trash me-1"></i>Delete selected
                     </button>
-                    <button type="submit" class="btn btn-outline-danger btn-sm" data-confirm="Delete ALL <?= e((string) $result['total']) ?> <?= e(strtolower($plural)) ?> matching this search/filter (not only this page)? This cannot be undone." onclick="document.getElementById('os-bulk-mode').value='filtered'">
+                    <button type="submit" class="btn btn-outline-danger btn-sm" data-confirm="Delete ALL <?= e((string) $result['total']) ?> <?= e(strtolower($plural)) ?> matching this search/filter (not only this page)? This cannot be undone." onclick="document.getElementById('os-bulk-mode').value='filtered'; this.form.action='<?= e(url($base . '/bulk-delete')) ?>'">
                         <i class="bi bi-funnel me-1"></i>Delete matching filter (<?= e((string) $result['total']) ?>)
                     </button>
-                    <span class="small text-muted">Select rows below, or delete everything that matches the current filter.</span>
+                    <?php endif; ?>
+                    <?php if ($bulkRateUpdate): ?>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#os-batch-rate-modal">
+                        <i class="bi bi-percent me-1"></i>Batch rate update
+                    </button>
+                    <?php endif; ?>
+                    <span class="small text-muted">Select rows below<?= $bulkDelete ? ', or delete everything that matches the current filter' : '' ?>.</span>
                 </div>
         <?php endif; ?>
         <div class="os-table-scroll">
             <table class="os-table">
                 <colgroup>
-                    <?php if ($bulkDelete && $canWrite): ?><col style="width:2.25rem"><?php endif; ?>
+                    <?php if (($bulkDelete || $bulkRateUpdate) && $canWrite): ?><col style="width:2.25rem"><?php endif; ?>
                     <?php if (!$hideIdColumn): ?><col class="os-col-id"><?php endif; ?>
                     <?php foreach ($cols as $_): ?><col><?php endforeach; ?>
                     <col class="os-col-actions">
                 </colgroup>
                 <thead>
                     <tr>
-                        <?php if ($bulkDelete && $canWrite): ?>
+                        <?php if (($bulkDelete || $bulkRateUpdate) && $canWrite): ?>
                             <th scope="col"><input type="checkbox" class="form-check-input" id="os-bulk-all" aria-label="Select all"></th>
                         <?php endif; ?>
                         <?php if (!$hideIdColumn): ?><th scope="col" class="os-col-id">ID</th><?php endif; ?>
@@ -200,7 +208,7 @@ $ownerFilter = $ownerFilter ?? null;
                 <tbody>
                 <?php foreach ($result['rows'] as $row): ?>
                     <tr>
-                        <?php if ($bulkDelete && $canWrite): ?>
+                        <?php if (($bulkDelete || $bulkRateUpdate) && $canWrite): ?>
                             <td><input type="checkbox" class="form-check-input os-bulk-id" name="ids[]" value="<?= e((string) $row['id']) ?>" form="os-bulk-form" aria-label="Select <?= e((string) $row['id']) ?>"></td>
                         <?php endif; ?>
                         <?php if (!$hideIdColumn): ?><td class="os-mono os-col-id"><?= e($row['id']) ?></td><?php endif; ?>
@@ -223,7 +231,7 @@ $ownerFilter = $ownerFilter ?? null;
                 </tbody>
             </table>
         </div>
-        <?php if ($bulkDelete && $canWrite): ?></form>
+        <?php if (($bulkDelete || $bulkRateUpdate) && $canWrite): ?></form>
             <script>
             (function () {
                 var all = document.getElementById('os-bulk-all');
@@ -233,6 +241,64 @@ $ownerFilter = $ownerFilter ?? null;
                 });
             })();
             </script>
+            <?php if ($bulkRateUpdate): ?>
+            <div class="modal fade" id="os-batch-rate-modal" tabindex="-1" aria-labelledby="os-batch-rate-title" aria-hidden="true">
+                <div class="modal-dialog">
+                    <form method="post" action="<?= e(url($base . '/bulk-rate-update')) ?>" class="modal-content" id="os-batch-rate-form">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="q" value="<?= e($q) ?>">
+                        <?php foreach ($filters as $fk => $fv): ?>
+                            <input type="hidden" name="<?= e((string) $fk) ?>" value="<?= e((string) $fv) ?>">
+                        <?php endforeach; ?>
+                        <div id="os-batch-rate-ids"></div>
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="os-batch-rate-title">Batch rate update</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="small text-muted">Applies to <strong>selected rows</strong> on this page. Optional prefix filter further narrows the selection.</p>
+                            <div class="mb-3">
+                                <label class="form-label" for="rate_mode">Mode</label>
+                                <select name="rate_mode" id="rate_mode" class="form-select form-select-sm" required>
+                                    <option value="percent">Percent change (e.g. 10 = +10%, -5 = −5%)</option>
+                                    <option value="absolute">Flat new rate (absolute)</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="rate_value">Value</label>
+                                <input type="text" class="form-control form-control-sm os-mono" name="rate_value" id="rate_value" required placeholder="10 or 0.0125" pattern="-?\d+(\.\d{1,8})?">
+                            </div>
+                            <div class="mb-0">
+                                <label class="form-label" for="prefix_filter">Prefix filter (optional)</label>
+                                <input type="text" class="form-control form-control-sm os-mono" name="prefix_filter" id="prefix_filter" placeholder="e.g. 1213" maxlength="32">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary btn-sm">Update rates</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <script>
+            (function () {
+                var modal = document.getElementById('os-batch-rate-modal');
+                if (!modal) return;
+                modal.addEventListener('show.bs.modal', function () {
+                    var box = document.getElementById('os-batch-rate-ids');
+                    if (!box) return;
+                    box.innerHTML = '';
+                    document.querySelectorAll('.os-bulk-id:checked').forEach(function (cb) {
+                        var i = document.createElement('input');
+                        i.type = 'hidden';
+                        i.name = 'ids[]';
+                        i.value = cb.value;
+                        box.appendChild(i);
+                    });
+                });
+            })();
+            </script>
+            <?php endif; ?>
         <?php endif; ?>
         <?php include __DIR__ . '/../partials/pagination.php'; ?>
     <?php endif; ?>

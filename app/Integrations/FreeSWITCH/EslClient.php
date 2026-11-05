@@ -81,6 +81,47 @@ final class EslClient
     }
 
     /**
+     * Originate a monitoring leg into eavesdrop on $targetUuid.
+     * Modes: spy (listen), whisper (coach A-leg), barge (both legs).
+     */
+    public function eavesdrop(string $targetUuid, string $monitorDialString, string $mode = 'spy'): string
+    {
+        if (!preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $targetUuid)) {
+            throw new \InvalidArgumentException('Not a FreeSWITCH channel UUID');
+        }
+        $monitorDialString = trim($monitorDialString);
+        if ($monitorDialString === '' || preg_match('/[\r\n]/', $monitorDialString)) {
+            throw new \InvalidArgumentException('Invalid monitor dial string');
+        }
+        $mode = strtolower($mode);
+        $vars = ['eavesdrop_enable_dtmf=false', 'ignore_early_media=true'];
+        if ($mode === 'whisper') {
+            $vars[] = 'eavesdrop_whisper_aleg=true';
+        } elseif ($mode === 'barge') {
+            $vars[] = 'eavesdrop_bridge_aleg=true';
+            $vars[] = 'eavesdrop_bridge_bleg=true';
+        }
+        // spy = listen-only (default eavesdrop, no bridge vars)
+        $cmd = 'originate {' . implode(',', $vars) . '}' . $monitorDialString . ' &eavesdrop(' . $targetUuid . ')';
+        return trim($this->bgapi($cmd));
+    }
+
+    /** Fire-and-forget API (returns Job-UUID). Falls back to api if bgapi unavailable. */
+    public function bgapi(string $command): string
+    {
+        if (preg_match('/[\r\n]/', $command)) {
+            throw new \InvalidArgumentException('Newlines are not allowed in ESL commands');
+        }
+        if ($this->sock === null) {
+            $this->connect();
+        }
+        $this->write('bgapi ' . $command);
+        $frame = $this->readFrame();
+        $text = trim((string) ($frame['Reply-Text'] ?? $frame['_body'] ?? ''));
+        return $text !== '' ? $text : trim((string) ($frame['_body'] ?? ''));
+    }
+
+    /**
      * Live channels from `show channels as json`.
      *
      * @return list<array<string,mixed>>
