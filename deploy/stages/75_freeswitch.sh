@@ -36,9 +36,11 @@ else
   trap 'rm -rf "$work"' EXIT
   jobs_n="$(nproc)"
 
-  # libks
+  # libks — shallow clones have no tags; libks CMake packaging changelog then fails with
+  # "string REPLACE requires at least four arguments". We install from source, not .deb.
   git clone --quiet --depth 1 https://github.com/signalwire/libks.git "$work/libks"
-  ( cd "$work/libks" && cmake . -DCMAKE_INSTALL_PREFIX=/usr -DWITH_LIBBACKTRACE=1 >/dev/null && make -j"$jobs_n" && make install )
+  ( cd "$work/libks" && cmake . -DCMAKE_INSTALL_PREFIX=/usr -DWITH_LIBBACKTRACE=1 -DWITH_PACKAGING=OFF \
+      && make -j"$jobs_n" && make install )
   # sofia-sip
   git clone --quiet --depth 1 https://github.com/freeswitch/sofia-sip.git "$work/sofia-sip"
   ( cd "$work/sofia-sip" && ./bootstrap.sh && ./configure CFLAGS="-g -ggdb" --with-pic --with-glib=no --without-doxygen --disable-stun --prefix=/usr \
@@ -49,7 +51,7 @@ else
       && ./configure CFLAGS="-g -ggdb" --with-pic --prefix=/usr && make -j"$jobs_n" && make install )
   # signalwire-c
   git clone --quiet --depth 1 https://github.com/signalwire/signalwire-c.git "$work/signalwire-c"
-  ( cd "$work/signalwire-c" && cmake . -DCMAKE_INSTALL_PREFIX=/usr >/dev/null && make -j"$jobs_n" && make install )
+  ( cd "$work/signalwire-c" && cmake . -DCMAKE_INSTALL_PREFIX=/usr && make -j"$jobs_n" && make install )
   ldconfig
 
   # FreeSWITCH itself
