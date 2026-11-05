@@ -2,7 +2,7 @@
 # MUST fix Domain REGISTER 483/500 and open REGISTER-without-auth on IP.
 # Run on the VoIP server as root (copy-paste exactly):
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/force-sip-register-fix.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/force-sip-register-fix.sh | sudo bash
 #
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }

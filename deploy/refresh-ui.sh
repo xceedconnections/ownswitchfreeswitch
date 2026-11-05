@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pull latest Ownswitch UI into a new release and switch traffic.
 # Usage (on the server as root):
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/refresh-ui.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/refresh-ui.sh | sudo bash
 # Or:
 #   sudo bash /opt/ownswitch-src/deploy/refresh-ui.sh
 set -euo pipefail

@@ -3,15 +3,24 @@
 Target: a **clean Ubuntu Server 24.04 LTS (noble), amd64**, single host, root/sudo access, outbound HTTPS.
 Everything is installed by idempotent bash stages under `deploy/`. Re-running is always safe.
 
-Stack installed (see `COMPATIBILITY.md`): MySQL 8.4 LTS · Redis · OpenSIPS 3.6 (+ `cgrates`, `mysql`, `drouting`… modules) ·
-CGRateS v0.10.4 · RTPengine 11.5.x · PHP 8.3-FPM · nginx · optional FreeSWITCH 1.10.12.
+Stack installed (see `COMPATIBILITY.md`): MySQL 8.4 LTS · Redis · CGRateS v0.10.4 · RTPengine 11.5.x ·
+PHP 8.3-FPM · nginx · FreeSWITCH 1.10.12 (SIP edge; skip with `FREESWITCH_ENABLED=0`).
 
 ## 1. Quick start
+
+**One-liner (recommended on a clean Ubuntu 24.04 host):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/install-server.sh \
+  | sudo bash -s -- --domain voip.example.com --email ops@example.com --password 'a-long-random-passphrase'
+```
+
+**Manual clone + staged install:**
 
 ```bash
 # on the Ubuntu 24.04 server
 sudo apt-get update && sudo apt-get install -y git
-git clone <your-ownswitch-repo> /opt/ownswitch-src && cd /opt/ownswitch-src
+git clone https://github.com/xceedconnections/ownswitchfreeswitch.git /opt/ownswitch-src && cd /opt/ownswitch-src
 
 # Windows checkouts cannot store the exec bit; fix once (install.sh also works via `bash`)
 find deploy -type f \( -name '*.sh' -o -path '*/bin/*' \) -exec chmod +x {} +
@@ -20,8 +29,9 @@ export OWNSWITCH_DOMAIN=voip.example.com          # DNS A record -> this server
 export OWNSWITCH_ADMIN_EMAIL=ops@example.com
 export LETSENCRYPT_EMAIL=ops@example.com          # optional; omit for self-signed
 export OWN_SWITCH_ADMIN_PASS='a-long-random-passphrase'   # optional; else prompt / auto-generate
+export FREESWITCH_ENABLED=1                       # default is already 1
 
-sudo -E ./deploy/install.sh            # asks for confirmation; add --yes to skip
+sudo -E bash deploy/install.sh --yes --non-interactive
 ```
 
 The run ends with a **deployment report** (`/var/lib/ownswitch-install/reports/latest.txt`) and a non-zero exit
@@ -75,7 +85,7 @@ Only non-secret values go in config files. Edit `/etc/ownswitch/install.conf` to
 | `RTP_PORT_MIN` / `RTP_PORT_MAX` | `30000` / `40000` | RTPengine media range (opened in ufw) |
 | `SIP_ALLOW_CIDRS` | *(any)* | comma list; restrict SIP to known customers/carriers |
 | `SSH_ALLOW_CIDRS` | *(any, rate-limited)* | comma list; your current SSH client is auto-added |
-| `FREESWITCH_ENABLED` | `0` | `1` builds FreeSWITCH (20–40 min) |
+| `FREESWITCH_ENABLED` | `1` | `0` skips FreeSWITCH build (20–40 min saved) |
 | `CGRATES_VERSION` | `v0.10.4` | git tag built by stage 60 |
 | `CGRATES_BIN_TARBALL_URL` / `_SHA256` | — | install pre-built binaries instead of building |
 | `CGRATES_TENANT` | `ownswitch.local` | CGRateS default tenant |

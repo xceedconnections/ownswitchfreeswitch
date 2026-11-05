@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-shot DB unblocker. Bypasses stale local trees and broken 015 qualify.
 # MUST run via curl (do not use an old copy under /opt/ownswitch-src):
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/emergency-db-fix.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/emergency-db-fix.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
 
@@ -9,7 +9,7 @@ SRC="${OWNSWITCH_SRC_DIR:-/opt/ownswitch-src}"
 OWN_OPT="${OWNSWITCH_OPT:-/opt/ownswitch}"
 OWN_ETC="${OWNSWITCH_ETC:-/etc/ownswitch}"
 ENV_FILE="${OWN_ETC}/ownswitch.env"
-RAW="https://raw.githubusercontent.com/xceedconnections/ownswitch/main"
+RAW="https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main"
 REPO="${OWN_REPO_URL:-https://github.com/xceedconnections/ownswitchfreeswitch.git}"
 
 echo "== emergency-db-fix =="

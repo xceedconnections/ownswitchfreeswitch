@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full SIP registration diagnosis + auto-repair for Ownswitch.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/diagnose-sip.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/diagnose-sip.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

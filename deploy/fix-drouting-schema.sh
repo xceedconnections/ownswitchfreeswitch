@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fix trunk OpenSIPS sync (missing dr_gateways / dr_rules / bad DB password).
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-drouting-schema.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-drouting-schema.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

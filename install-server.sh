@@ -4,12 +4,12 @@
 # Server 24.04 LTS (amd64) host.
 #
 # This script installs EVERYTHING for a working VoIP billing switch:
-#   MySQL 8.4 · Redis · OpenSIPS 3.6 (+ modules) · CGRateS · RTPengine
-#   PHP 8.3-FPM · Nginx · FreeSWITCH (media) · portal · workers · firewall
+#   MySQL 8.4 · Redis · CGRateS · RTPengine · FreeSWITCH (SIP edge)
+#   PHP 8.3-FPM · Nginx · portal · workers · firewall
 #
 # Usage (on a clean Ubuntu 24.04 server as root):
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/install-server.sh \
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/install-server.sh \
 #     | sudo bash -s -- --domain voip.example.com --email ops@example.com
 #
 # Or after cloning:
@@ -20,7 +20,7 @@
 #   --domain FQDN          Portal / SIP realm (A/AAAA record → this server)
 #   --email EMAIL          Admin + Let's Encrypt contact email
 #   --password PASS        Admin password (min 12 chars); auto-generated if omitted
-#   --repo URL             Git clone URL (default: xceedconnections/ownswitch)
+#   --repo URL             Git clone URL (default: xceedconnections/ownswitchfreeswitch)
 #   --branch BRANCH        Git branch (default: main)
 #   --no-freeswitch        Skip FreeSWITCH (faster; still full billing/routing)
 #   --no-letsencrypt       Self-signed TLS only

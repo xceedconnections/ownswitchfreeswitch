@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Make SIP UDP/5060 reachable for softphones (default SIP transport).
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-udp-5060.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-udp-5060.sh | sudo bash
 #
 # Optional (opens Hetzner Cloud Firewall from the API):
 #   echo 'YOUR_TOKEN' | sudo tee /etc/ownswitch/hcloud.token

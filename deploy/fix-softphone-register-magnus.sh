@@ -4,7 +4,7 @@
 #   NO Outbound Proxy required
 #   REGISTER WITHOUT digest must get 401 (never open 200)
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-softphone-register-magnus.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-softphone-register-magnus.sh | sudo bash
 # Optional:  sudo bash .../fix-softphone-register-magnus.sh <sip_user> <sip_pass>
 #
 set -euo pipefail

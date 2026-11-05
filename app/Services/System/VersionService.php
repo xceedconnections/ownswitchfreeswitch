@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ownswitch\Services\System;
 
 /**
- * Current install vs GitHub main (xceedconnections/ownswitch).
+ * Current install vs GitHub main (xceedconnections/ownswitchfreeswitch).
  */
 final class VersionService
 {
     private const HELPER = '/usr/local/sbin/ownswitch-update';
-    private const REPO = 'xceedconnections/ownswitch';
+    private const REPO = 'xceedconnections/ownswitchfreeswitch';
     private const SRC = '/opt/ownswitch-src';
     private const CURRENT = '/opt/ownswitch/current';
     private const REFRESH = '/opt/ownswitch-src/deploy/refresh-ui.sh';

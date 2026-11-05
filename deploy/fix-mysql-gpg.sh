@@ -3,7 +3,7 @@
 # Prefer the full automatic path:
 #   curl -fsSL .../deploy/repair-and-continue.sh | sudo bash
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-mysql-gpg.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-mysql-gpg.sh | sudo bash
 set -Eeuo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 
@@ -66,4 +66,4 @@ echo "==> mysql-server candidate: ${CAND:-none}"
 [[ "${CAND}" == 8.4.* ]] || { echo "ERROR: expected 8.4.x candidate"; exit 1; }
 
 echo "==> OK. Prefer the automatic resume:"
-echo "    curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/repair-and-continue.sh | sudo bash"
+echo "    curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/repair-and-continue.sh | sudo bash"

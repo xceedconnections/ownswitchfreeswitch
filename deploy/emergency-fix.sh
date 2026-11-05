@@ -8,7 +8,7 @@
 #   3) first admin credentials
 #   4) CDR worker symlink/unit
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/emergency-fix.sh \
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/emergency-fix.sh \
 #     | sudo bash
 # =============================================================================
 set -Eeuo pipefail

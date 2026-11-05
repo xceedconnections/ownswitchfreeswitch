@@ -77,11 +77,13 @@ sudo -u cgrates cgr-engine -config_path=/etc/cgrates -check_config   # validates
 * Package names differ (`rtpengine-*` vs `ngcp-rtpengine-*`); the stage detects them. Unit/config path mismatch: see the `units:` log line.
 * Control socket test: `echo 'd7:command4:pinge' | nc -u -w1 127.0.0.1 22222` (ng bencode; expects `pong`).
 
-## FreeSWITCH (stage 75, optional)
+## FreeSWITCH (stage 75)
 
-* Build errors: read the failing `make` output in `/var/log/ownswitch-install.log`; `mod_av` is disabled on purpose (ffmpeg 6 incompatibility).
+* Build errors: read the failing `make`/`cmake` output in `/var/log/ownswitch-install.log`.
+* `string REPLACE requires at least four arguments` in libks CMake: fixed by `-DWITH_PACKAGING=OFF` (shallow clones lack git tags). Pull latest `main` and re-run `--from 75`.
+* `mod_av` and `mod_signalwire` are disabled on purpose (ffmpeg / SignalWire cloud not required).
 * `fs_cli -p <password>`: password in `/etc/ownswitch/secrets/freeswitch_esl_password`; ESL listens on `127.0.0.1:8021` only.
-* Port clash on 5060: FS profiles must be `5090/5091` (`vars.xml`).
+* SIP: external Sofia profile binds `SIP_PORT` (default 5060); internal 5090/5091 profiles are disabled by the installer.
 
 ## PHP / nginx / TLS (stage 80)
 

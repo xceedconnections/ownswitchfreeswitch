@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-shot: repair OpenSIPS provisioning + print exact softphone / vendor steps.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-all-sip.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-all-sip.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

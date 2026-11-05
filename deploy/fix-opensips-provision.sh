@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fix "OpenSIPS provisioning failed" — sync DB password, grants, schema, then test write.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-opensips-provision.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-opensips-provision.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

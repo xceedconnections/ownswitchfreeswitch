@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Make softphone REGISTER work: use_domain=0, repair OpenSIPS, optional live REGISTER test.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-softphone-now.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-softphone-now.sh | sudo bash
 #
 # Optional live test after you set a password in the portal:
 #   sudo bash /opt/ownswitch-src/deploy/fix-softphone-now.sh myuser 'MyPassword123!'

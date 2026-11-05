@@ -26,39 +26,51 @@ if [[ -x "${FS_PREFIX}/bin/freeswitch" && "$(cat "${MARK}" 2>/dev/null || true)"
   log_ok "FreeSWITCH ${FREESWITCH_VERSION} already built"
 else
   log_info "Building FreeSWITCH ${FREESWITCH_VERSION} from source (20-40 minutes)"
+  # Ubuntu 24.04 deps used by FS 1.10.x + sofia/spandsp/libks (no ffmpeg — mod_av disabled).
   apt_install build-essential cmake automake autoconf libtool libtool-bin pkg-config git \
     libssl-dev zlib1g-dev libdb-dev unixodbc-dev libncurses-dev libexpat1-dev libgdbm-dev bison \
     libtiff-dev uuid-dev libpcre3-dev libedit-dev libsqlite3-dev libcurl4-openssl-dev nasm \
     libogg-dev libspeex-dev libspeexdsp-dev libldns-dev libsndfile1-dev libopus-dev yasm \
-    libjpeg-dev libpq-dev
+    libjpeg-dev libpq-dev libxml2-dev liblua5.2-dev libflac-dev libvorbis-dev
 
   work="$(mktemp -d /tmp/fs-build.XXXXXX)"
   trap 'rm -rf "$work"' EXIT
   jobs_n="$(nproc)"
+  export PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
-  # libks — shallow clones have no tags; libks CMake packaging changelog then fails with
-  # "string REPLACE requires at least four arguments". We install from source, not .deb.
+  # libks: shallow clones have no tags → Debian packaging changelog CMake crashes
+  # ("string REPLACE requires at least four arguments"). Skip packaging + libbacktrace
+  # (ExternalProject git TIMEOUT 10 is flaky). Ownswitch does not need SignalWire cloud.
+  log_info "Building libks…"
   git clone --quiet --depth 1 https://github.com/signalwire/libks.git "$work/libks"
-  ( cd "$work/libks" && cmake . -DCMAKE_INSTALL_PREFIX=/usr -DWITH_LIBBACKTRACE=1 -DWITH_PACKAGING=OFF \
+  ( cd "$work/libks" \
+      && cmake . -DCMAKE_INSTALL_PREFIX=/usr -DWITH_PACKAGING=OFF -DWITH_LIBBACKTRACE=OFF \
       && make -j"$jobs_n" && make install )
-  # sofia-sip
-  git clone --quiet --depth 1 https://github.com/freeswitch/sofia-sip.git "$work/sofia-sip"
-  ( cd "$work/sofia-sip" && ./bootstrap.sh && ./configure CFLAGS="-g -ggdb" --with-pic --with-glib=no --without-doxygen --disable-stun --prefix=/usr \
-      && make -j"$jobs_n" && make install )
-  # spandsp (FreeSWITCH 1.10 requires this specific commit)
+
+  # sofia-sip (pin release known-good with FS 1.10.12 / Ubuntu 24.04)
+  log_info "Building sofia-sip…"
+  git clone --quiet --depth 1 --branch v1.13.17 https://github.com/freeswitch/sofia-sip.git "$work/sofia-sip"
+  ( cd "$work/sofia-sip" && ./bootstrap.sh && ./configure CFLAGS="-g -ggdb" --with-pic --with-glib=no \
+      --without-doxygen --disable-stun --prefix=/usr && make -j"$jobs_n" && make install )
+
+  # spandsp (FreeSWITCH 1.10.x requires this commit — master breaks mod_spandsp)
+  log_info "Building spandsp…"
   git clone --quiet https://github.com/freeswitch/spandsp.git "$work/spandsp"
   ( cd "$work/spandsp" && git checkout --quiet 0d2e6ac65e0e8f53d652665a743015a88bf048d4 && ./bootstrap.sh \
       && ./configure CFLAGS="-g -ggdb" --with-pic --prefix=/usr && make -j"$jobs_n" && make install )
-  # signalwire-c
-  git clone --quiet --depth 1 https://github.com/signalwire/signalwire-c.git "$work/signalwire-c"
-  ( cd "$work/signalwire-c" && cmake . -DCMAKE_INSTALL_PREFIX=/usr && make -j"$jobs_n" && make install )
+
+  # signalwire-c is optional (mod_signalwire). Skip it — Ownswitch uses ESL/xml_curl only.
   ldconfig
 
   # FreeSWITCH itself
+  log_info "Building FreeSWITCH ${FREESWITCH_VERSION}…"
   git clone --quiet --depth 1 --branch "${FREESWITCH_VERSION}" https://github.com/signalwire/freeswitch.git "$work/freeswitch"
   ( cd "$work/freeswitch" \
     && ./bootstrap.sh -j \
-    && sed -i -E 's/^(applications|formats)\/mod_av/#\1\/mod_av/' modules.conf \
+    && sed -i -E \
+         -e 's/^(applications|formats)\/mod_av/#\1\/mod_av/' \
+         -e 's/^applications\/mod_signalwire/#applications\/mod_signalwire/' \
+         modules.conf \
     && ./configure --prefix="${FS_PREFIX}" --enable-portable-binary --disable-dependency-tracking \
     && make -j"$jobs_n" && make install \
     && { [[ -d "${FS_PREFIX}/conf/vanilla" || -f "${FS_PREFIX}/conf/freeswitch.xml" ]] || make samples; } )

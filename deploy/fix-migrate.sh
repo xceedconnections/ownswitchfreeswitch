@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Force-pull Ownswitch migrations and apply them. Survives stale /opt/ownswitch-src copies.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-migrate.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-migrate.sh | sudo bash
 set -euo pipefail
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -13,7 +13,7 @@ OWN_OPT="${OWNSWITCH_OPT:-/opt/ownswitch}"
 OWN_ETC="${OWNSWITCH_ETC:-/etc/ownswitch}"
 ENV_FILE="${OWN_ETC}/ownswitch.env"
 REPO_URL="${OWN_REPO_URL:-https://github.com/xceedconnections/ownswitchfreeswitch.git}"
-RAW="https://raw.githubusercontent.com/xceedconnections/ownswitch/main"
+RAW="https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main"
 
 echo "== Ownswitch fix-migrate =="
 echo "SRC=$SRC"

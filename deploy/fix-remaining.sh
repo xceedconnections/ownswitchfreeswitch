@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fix the three remaining Ownswitch failures: OpenSIPS schema, CGRateS, real portal deploy.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-remaining.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-remaining.sh | sudo bash
 set -Eeuo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

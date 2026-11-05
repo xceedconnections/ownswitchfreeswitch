@@ -32,7 +32,7 @@ Use **Ubuntu 24.04 LTS**, **x86_64 (Intel/AMD)** — not ARM (CAX).
 SSH into the new server, then:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/install-server.sh \
+curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/install-server.sh \
   | sudo bash -s -- \
       --domain voip.yourdomain.com \
       --email ops@yourdomain.com \
@@ -43,12 +43,11 @@ Omit `--password` to auto-generate (saved under `/root/ownswitch-credentials.txt
 
 ### What gets installed
 
-- MySQL **8.4 LTS** (databases `ownswitch`, `opensips`, `cgrates`)
+- MySQL **8.4 LTS** (databases `ownswitch`, `cgrates`; `opensips` DB kept for schema compatibility)
 - Redis (CGRateS DataDB)
-- OpenSIPS **3.6** + mysql/cgrates/rtpengine-related modules
 - CGRateS **v0.10.4**
 - RTPengine + recording daemon
-- FreeSWITCH **1.10.12** (default on; use `--no-freeswitch` to skip)
+- FreeSWITCH **1.10.12** SIP edge (default on; use `--no-freeswitch` to skip)
 - Nginx + PHP **8.3**-FPM + Ownswitch portal
 - Firewall, fail2ban (SSH), workers, backup timer
 - First administrator account + migrations
@@ -57,10 +56,10 @@ Expect **20–90 minutes** depending on CPU (FreeSWITCH source build is the slow
 
 ### Faster install (no FreeSWITCH)
 
-Billing, routing, OpenSIPS, CGRateS, RTPengine still install:
+Billing, CGRateS, RTPengine, portal still install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/install-server.sh \
+curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/install-server.sh \
   | sudo bash -s -- --domain voip.yourdomain.com --email ops@yourdomain.com --no-freeswitch
 ```
 

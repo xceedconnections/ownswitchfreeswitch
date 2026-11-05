@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install OpenSIPS UAC registrant support + re-render cfg + sync trunks.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/enable-trunk-register.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/enable-trunk-register.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

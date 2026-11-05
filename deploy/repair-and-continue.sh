@@ -5,7 +5,7 @@
 # Fixes the common MySQL APT EXPKEYSIG failure, pulls latest code, then resumes
 # the installer from stage 30 through the end (MySQL → … → portal).
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/repair-and-continue.sh \
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/repair-and-continue.sh \
 #     | sudo bash
 #
 # Optional env:

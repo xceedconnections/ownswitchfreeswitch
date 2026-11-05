@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fix "Database error; the change was not saved" when trunk auth_mode columns are missing.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-trunk-schema.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-trunk-schema.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

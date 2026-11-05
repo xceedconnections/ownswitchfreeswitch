@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prove where SIP breaks: local OpenSIPS vs path to the public internet.
 #   sudo bash /opt/ownswitch-src/deploy/diagnose-sip-path.sh
-# Or:  curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/diagnose-sip-path.sh | sudo bash
+# Or:  curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/diagnose-sip-path.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

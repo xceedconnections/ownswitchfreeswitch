@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Repair Eyebeam / softphone REGISTER against Ownswitch OpenSIPS.
 # Run ON the VoIP server:
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-eyebeam-register.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-eyebeam-register.sh | sudo bash
 # Optional live test:
 #   sudo bash /opt/ownswitch-src/deploy/fix-eyebeam-register.sh USER 'PasswordHere'
 set -euo pipefail

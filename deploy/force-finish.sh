@@ -5,7 +5,7 @@
 # Runs stages one-by-one with full logs (does not hide failures).
 # Use when health still shows opensips/cgrates/nginx/php inactive.
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/force-finish.sh \
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/force-finish.sh \
 #     | sudo bash
 #
 # Env:

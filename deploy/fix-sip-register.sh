@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Enable OpenSIPS provisioning + diagnose/fix softphone REGISTER and trunk sync.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-sip-register.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-sip-register.sh | sudo bash
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

@@ -2,7 +2,7 @@
 # Surgical patch: force digest REGISTER on whatever opensips.cfg is live.
 # Does NOT depend on full Ownswitch template / stage 50 succeeding.
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/patch-opensips-register-auth-now.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/patch-opensips-register-auth-now.sh | sudo bash
 #
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root (sudo bash ...), not sudo -u ownswitch"; exit 1; }

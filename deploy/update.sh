@@ -3,7 +3,7 @@
 #
 # On the server (as root), run ONE of:
 #   sudo bash /opt/ownswitch-src/deploy/update.sh
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/update.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/update.sh | sudo bash
 #
 set -euo pipefail
 

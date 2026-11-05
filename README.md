@@ -10,14 +10,14 @@ Install target: **Ubuntu Server 24.04 LTS (amd64)** — e.g. Hetzner Cloud.
 
 ```bash
 # On the new server (as root). Point DNS A → this IP first when possible.
-curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/install-server.sh \
+curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/install-server.sh \
   | sudo bash -s -- \
       --domain voip.yourdomain.com \
       --email ops@yourdomain.com \
       --password 'ChooseALongPassword1!'
 ```
 
-That single script clones this repo and installs the full stack (MySQL, Redis, OpenSIPS, CGRateS, RTPengine, FreeSWITCH, Nginx, PHP, portal, firewall, workers). Credentials are printed and saved to `/root/ownswitch-credentials.txt`.
+That single script clones this repo and installs the full stack (MySQL, Redis, CGRateS, RTPengine, FreeSWITCH, Nginx, PHP, portal, firewall, workers). Credentials are printed and saved to `/root/ownswitch-credentials.txt`.
 
 Skip FreeSWITCH (faster): add `--no-freeswitch`.
 
@@ -26,7 +26,7 @@ Skip FreeSWITCH (faster): add `--no-freeswitch`.
 One command repairs MySQL APT keys, pulls latest code, and resumes from stage 30 automatically:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/repair-and-continue.sh \
+curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/repair-and-continue.sh \
   | sudo bash
 ```
 

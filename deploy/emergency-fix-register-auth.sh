@@ -2,7 +2,7 @@
 # Nuclear fix: Ownswitch OpenSIPS MUST digest-challenge REGISTER (401).
 # Fixes: IP → open 200 without auth, Domain → 483 Too Many Hops.
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/emergency-fix-register-auth.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/emergency-fix-register-auth.sh | sudo bash
 #
 set -euo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }

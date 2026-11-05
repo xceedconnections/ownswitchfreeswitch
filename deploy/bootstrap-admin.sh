@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fix DB env key names, migrate, create admin. Portal login is already serving.
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/bootstrap-admin.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/bootstrap-admin.sh | sudo bash
 set -Eeuo pipefail
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root"; exit 1; }
 

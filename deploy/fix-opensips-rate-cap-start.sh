@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Emergency: OpenSIPS down because check_rate_cap called undefined apply_ruri_strip.
 #
-#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitch/main/deploy/fix-opensips-rate-cap-start.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/xceedconnections/ownswitchfreeswitch/main/deploy/fix-opensips-rate-cap-start.sh | sudo bash
 # Or:
 #   cd /opt/ownswitch-src && git fetch origin main && git reset --hard origin/main \
 #     && bash deploy/fix-opensips-rate-cap-start.sh
