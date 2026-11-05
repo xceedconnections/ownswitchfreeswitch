@@ -194,12 +194,12 @@ final class FreeswitchProvisioner
     /**
      * Sofia outbound REGISTER / gateway state for portal trunk list.
      *
-     * @return array{state:string,status:string,label:string}
+     * @return array{state:string,status:string,label:string,latency_ms:int}
      */
     public function gatewayStatus(int $trunkId): array
     {
         $name = 'gw-' . $trunkId;
-        $empty = ['state' => '', 'status' => '', 'label' => 'n/a'];
+        $empty = ['state' => '', 'status' => '', 'label' => 'n/a', 'latency_ms' => 0];
         if (!$this->enabled() || $trunkId <= 0) {
             return $empty;
         }
@@ -207,22 +207,28 @@ final class FreeswitchProvisioner
             $body = $this->esl()->api('sofia status gateway ' . $name);
         } catch (\Throwable $e) {
             error_log('[ownswitch] sofia gateway status: ' . $e->getMessage());
-            return ['state' => '', 'status' => '', 'label' => 'err'];
+            return ['state' => '', 'status' => '', 'label' => 'err', 'latency_ms' => 0];
         }
         if ($body === '' || stripos($body, 'Invalid Gateway') !== false || stripos($body, 'not found') !== false) {
-            return ['state' => 'NOGW', 'status' => '', 'label' => 'not loaded'];
+            return ['state' => 'NOGW', 'status' => '', 'label' => 'not loaded', 'latency_ms' => 0];
         }
         $state = '';
         $status = '';
+        $pingRaw = '';
         if (preg_match('/^\s*State\s+(\S+)/mi', $body, $m)) {
             $state = strtoupper(trim($m[1]));
         }
         if (preg_match('/^\s*Status\s+(\S+)/mi', $body, $m)) {
             $status = strtoupper(trim($m[1]));
         }
+        // FreeSWITCH prints "PingTime  0.02" (seconds) or sometimes ms — pingToMs normalises.
+        if (preg_match('/^\s*PingTime\s+(\S+)/mi', $body, $m)) {
+            $pingRaw = trim($m[1]);
+        }
+        $latencyMs = $this->pingToMs($pingRaw);
         $label = $state !== '' ? $state : ($status !== '' ? $status : 'unknown');
         // REGED = registered; NOREG = IP peer (no register); FAIL_WAIT / UNREGED = problem
-        return ['state' => $state, 'status' => $status, 'label' => $label];
+        return ['state' => $state, 'status' => $status, 'label' => $label, 'latency_ms' => $latencyMs];
     }
 
     private function reloadGateway(int $trunkId): void

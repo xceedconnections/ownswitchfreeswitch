@@ -66,6 +66,24 @@ $cell = static function (array $f, mixed $v): string {
         return '<span class="os-presence">' . $dot . ' <span class="small text-muted">offline</span></span>';
     }
     if (($f['name'] ?? '') === 'latency_ms') {
+        if (is_array($v)) {
+            $online = !empty($v['online']);
+            $ms = isset($v['ms']) && is_numeric($v['ms']) ? (int) $v['ms'] : null;
+            $state = trim((string) ($v['state'] ?? ''));
+            $dot = $online
+                ? '<span class="os-presence-dot os-presence-dot--on" title="' . e($state !== '' ? $state : 'Online') . '"></span>'
+                : '<span class="os-presence-dot os-presence-dot--off" title="' . e($state !== '' ? $state : 'Offline') . '"></span>';
+            if ($online && $ms !== null && $ms > 0) {
+                $cls = $ms < 80 ? 'success' : ($ms < 200 ? 'warning' : 'danger');
+                return '<span class="os-presence">' . $dot . ' <span class="os-mono text-' . $cls . '">' . e((string) $ms) . ' ms</span></span>';
+            }
+            if ($online) {
+                $lbl = $state !== '' ? $state : 'ok';
+                return '<span class="os-presence">' . $dot . ' <span class="small text-muted">' . e($lbl) . '</span></span>';
+            }
+            $lbl = $state !== '' ? $state : 'offline';
+            return '<span class="os-presence">' . $dot . ' <span class="small text-muted">' . e($lbl) . '</span></span>';
+        }
         if ($v === null || $v === '' || $v === '—') {
             return '<span class="text-muted">—</span>';
         }

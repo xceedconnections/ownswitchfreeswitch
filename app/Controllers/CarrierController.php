@@ -124,11 +124,20 @@ final class CarrierController extends CrudController
                 $row['latency_ms'] = '—';
                 continue;
             }
-            // REGISTER trunks: show Sofia gateway state (REGED / FAIL_WAIT / …).
+            // REGISTER trunks: Sofia state + OPTIONS PingTime (ms).
             if ($mode === 'register' && $fsOk) {
                 $st = $prov->gatewayStatus((int) ($row['id'] ?? 0));
-                $row['latency_ms'] = $st['label'];
-                $row['register_status'] = $st['state'];
+                $state = strtoupper((string) ($st['state'] ?? ''));
+                $ms = (int) ($st['latency_ms'] ?? 0);
+                $online = in_array($state, ['REGED', 'NOREG'], true)
+                    || strtoupper((string) ($st['status'] ?? '')) === 'UP';
+                // Presence-style cell: green/red dot + latency ms (falls back to state label).
+                $row['latency_ms'] = [
+                    'online' => $online,
+                    'ms' => $ms > 0 ? $ms : null,
+                    'state' => $st['label'] !== '' ? (string) $st['label'] : $state,
+                ];
+                $row['register_status'] = $state;
                 continue;
             }
             $qualify = strtolower((string) ($row['qualify'] ?? 'yes')) === 'yes';
