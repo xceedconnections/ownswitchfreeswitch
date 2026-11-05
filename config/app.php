@@ -52,13 +52,17 @@ return [
             'host' => Env::get('RTPENGINE_HOST', ''),
             'port' => (int) Env::get('RTPENGINE_PORT', 22222),
         ],
-        'freeswitch' => [
-            'host'       => (string) Env::get('FREESWITCH_HOST', Env::get('FREESWITCH_ESL_HOST', '')),
-            'port'       => (int) Env::get('FREESWITCH_PORT', Env::get('FREESWITCH_ESL_PORT', 8021)),
-            'password'   => (string) Env::get('FREESWITCH_PASSWORD', Env::get('FREESWITCH_ESL_PASSWORD', '')),
-            'xml_secret' => (string) Env::get('FS_XML_SECRET', ''),
-            'conf_dir'   => (string) Env::get('FREESWITCH_CONF', '/usr/local/freeswitch/conf'),
-        ],
+        'freeswitch' => (static function (): array {
+            $host = trim((string) (Env::get('FREESWITCH_ESL_HOST') ?: Env::get('FREESWITCH_HOST', '') ?: ''));
+            $pass = trim((string) (Env::get('FREESWITCH_ESL_PASSWORD') ?: Env::get('FREESWITCH_PASSWORD', '') ?: ''));
+            return [
+                'host'       => $host,
+                'port'       => (int) (Env::get('FREESWITCH_ESL_PORT') ?: Env::get('FREESWITCH_PORT', 8021)),
+                'password'   => $pass,
+                'xml_secret' => trim((string) Env::get('FS_XML_SECRET', '')),
+                'conf_dir'   => (string) Env::get('FREESWITCH_CONF', '/usr/local/freeswitch/conf'),
+            ];
+        })(),
         // Portal / OpenSIPS DNC hot cache (Redis SET). DB index must not collide with CGRateS (usually 10).
         'redis' => [
             'enabled'  => (bool) Env::get('REDIS_HOST', '127.0.0.1'),

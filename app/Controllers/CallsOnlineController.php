@@ -111,7 +111,8 @@ final class CallsOnlineController extends BaseController
         $error = null;
         $calls = [];
         if (!$prov->enabled()) {
-            return [[], 'FreeSWITCH is not configured (ESL host / password).'];
+            $hint = $prov->initError() !== '' ? $prov->initError() : 'ESL host / password missing in /etc/ownswitch/ownswitch.env';
+            return [[], 'FreeSWITCH is not configured: ' . $hint . ' — run: sudo bash /opt/ownswitch-src/deploy/fix-esl-auth.sh'];
         }
         try {
             $mine = $this->mySipUsernames($r);

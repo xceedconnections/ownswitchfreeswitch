@@ -12,6 +12,8 @@ final class EslClient
 
     public function __construct(private string $host, private int $port = 8021, private string $password = '', private float $timeout = 2.0)
     {
+        $this->host = trim($host);
+        $this->password = trim($password);
     }
 
     public function configured(): bool
@@ -33,10 +35,15 @@ final class EslClient
         if (($hello['Content-Type'] ?? '') !== 'auth/request') {
             throw new \RuntimeException('Unexpected ESL greeting');
         }
-        $this->write("auth {$this->password}");
+        $this->write('auth ' . $this->password);
         $reply = $this->readFrame();
-        if (!str_starts_with(trim($reply['Reply-Text'] ?? ''), '+OK')) {
-            throw new \RuntimeException('ESL authentication failed');
+        $text = trim((string) ($reply['Reply-Text'] ?? $reply['_body'] ?? ''));
+        if (!str_starts_with($text, '+OK')) {
+            throw new \RuntimeException(
+                'ESL authentication failed'
+                . ($text !== '' ? " ({$text})" : '')
+                . '. Sync password: sudo bash /opt/ownswitch-src/deploy/fix-esl-auth.sh'
+            );
         }
     }
 
