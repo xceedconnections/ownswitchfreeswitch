@@ -6,10 +6,13 @@ namespace Ownswitch\Controllers;
 
 use Ownswitch\App;
 use Ownswitch\Http\Request;
+use Ownswitch\Integrations\FreeSWITCH\FreeswitchProvisioner;
 use Ownswitch\Repositories\BaseRepository;
 use Ownswitch\Repositories\CustomerRepository;
 use Ownswitch\Repositories\ResellerRepository;
 use Ownswitch\Repositories\UserRepository;
+use Ownswitch\Support\Crypto;
+use Ownswitch\Support\SipCodecs;
 use Ownswitch\Support\TenantScope;
 
 /** Magnus Clients → Users — core fields + portal login (email/password). */
@@ -19,7 +22,7 @@ final class CustomerController extends CrudController
     protected string $singular = 'User';
     protected string $plural = 'Users';
     protected array $writeRoles = ['super_admin', 'admin', 'reseller'];
-    protected string $emptyHint = 'No users yet. Create User → set Email + Portal password → assign Plan → add SIP User → Refill credit.';
+    protected string $emptyHint = 'No users yet. Create User → Email + Portal password → Plan → credit. A matching Dynamic SIP user is created automatically (same username/password); edit under SIP Users anytime.';
 
     protected function repo(): BaseRepository
     {
@@ -169,8 +172,122 @@ final class CustomerController extends CrudController
             return null;
         }
         // Refresh OpenSIPS allow_calls when prepaid balance / status changes
-        \Ownswitch\Integrations\FreeSWITCH\FreeswitchProvisioner::fromConfig()->refreshAllowCallsForCustomer($id);
-        return $res['detail'] . ' Sign in with username or email + portal password.';
+        FreeswitchProvisioner::fromConfig()->refreshAllowCallsForCustomer($id);
+
+        $msg = $res['detail'] . ' Sign in with username or email + portal password.';
+        // On create only: Dynamic SIP peer with same username + portal password (admin can edit later).
+        if ($existing === null && is_string($plain) && $plain !== '') {
+            $sipMsg = $this->createDefaultSipAccount(
+                $id,
+                (string) ($row['name'] ?? ''),
+                $plain,
+                (string) ($row['status'] ?? 'active')
+            );
+            if ($sipMsg !== null) {
+                $msg .= ' ' . $sipMsg;
+            }
+        }
+        return $msg;
+    }
+
+    /**
+     * Create one Dynamic sip_accounts row matching portal username/password.
+     * Skips (with flash) if username is already taken — does not touch existing REGED peers.
+     */
+    private function createDefaultSipAccount(int $customerId, string $name, string $plainPassword, string $customerStatus): ?string
+    {
+        $username = $this->sipUsernameFromPortalName($name, $customerId);
+        if ($username === '') {
+            App::session()->flash('warning', 'User saved, but SIP user was not auto-created (invalid username). Add one under SIP Users.');
+            return null;
+        }
+        $domain = (string) App::config('app.integrations.opensips.sip_domain', 'sip.example.test');
+        try {
+            $st = $this->db()->prepare('SELECT id FROM sip_accounts WHERE username = ? AND domain = ? LIMIT 1');
+            $st->execute([$username, $domain]);
+            if ($st->fetchColumn()) {
+                App::session()->flash(
+                    'warning',
+                    "User saved. SIP username “{$username}” already exists — open SIP Users to add another peer manually."
+                );
+                return null;
+            }
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] auto SIP lookup: ' . $e->getMessage());
+            return null;
+        }
+
+        try {
+            [$ha1, $ha1b] = FreeswitchProvisioner::ha1($username, $domain, $plainPassword);
+            $enc = Crypto::encrypt($plainPassword);
+        } catch (\Throwable $e) {
+            App::session()->flash('warning', 'User saved, but SIP password could not be stored: ' . mb_substr($e->getMessage(), 0, 160));
+            return null;
+        }
+
+        $sipStatus = in_array($customerStatus, ['active'], true) ? 'active' : 'disabled';
+        $codecs = SipCodecs::defaultStorage($this->db());
+        try {
+            $this->db()->prepare(
+                "INSERT INTO sip_accounts
+                    (customer_id, username, domain, ha1, ha1b, password_enc, password_changed_at,
+                     sip_host, connection_mode, sip_port, codecs, qualify, dtmfmode, dtmf_pass,
+                     max_channels, max_cps, max_call_duration, status)
+                 VALUES
+                    (?,?,?,?,?,?,UTC_TIMESTAMP(),'dynamic','dynamic',5060,?,'no','RFC2833','yes',2,1,0,?)"
+            )->execute([$customerId, $username, $domain, $ha1, $ha1b, $enc, $codecs, $sipStatus]);
+            $sipId = (int) $this->db()->lastInsertId();
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] auto SIP insert: ' . $e->getMessage());
+            App::session()->flash('warning', 'User saved, but SIP user insert failed. Add one under SIP Users.');
+            return null;
+        }
+
+        $prov = FreeswitchProvisioner::fromConfig();
+        if ($prov->enabled() && $sipStatus === 'active') {
+            try {
+                $row = [
+                    'username' => $username,
+                    'domain' => $domain,
+                    'ha1' => $ha1,
+                    'ha1b' => $ha1b,
+                    'status' => 'active',
+                    'connection_mode' => 'dynamic',
+                    'sip_host' => 'dynamic',
+                    'max_channels' => 2,
+                    'codecs' => $codecs,
+                    '_plain_password' => $plainPassword,
+                    '_effective_media' => 'relay',
+                ];
+                $prov->upsertSubscriber($username, $domain, $ha1, $ha1b, $row);
+                $prov->syncSipPeerProfile($username, 'relay', 2, $row);
+                $prov->reloadAddresses();
+            } catch (\Throwable $e) {
+                error_log('[ownswitch] auto SIP provision: ' . $e->getMessage());
+                App::session()->flash('warning', 'SIP user saved in portal; FreeSWITCH provision warning: ' . mb_substr($e->getMessage(), 0, 160));
+            }
+        }
+
+        return "Dynamic SIP user “{$username}” created (id {$sipId}) with the same password — edit under SIP Users anytime.";
+    }
+
+    /** Map portal Username → SIP id (A-Za-z0-9._- , 3–64). */
+    private function sipUsernameFromPortalName(string $name, int $customerId): string
+    {
+        $base = strtolower(trim($name));
+        $base = preg_replace('/[^a-z0-9._-]+/', '_', $base) ?? '';
+        $base = trim($base, '._-');
+        if (strlen($base) < 3) {
+            $base = 'user' . $customerId;
+        }
+        if (strlen($base) > 64) {
+            $base = substr($base, 0, 64);
+            $base = rtrim($base, '._-');
+        }
+        if (!preg_match('/^[A-Za-z0-9._-]{3,64}$/', $base)) {
+            $base = 'user' . $customerId;
+        }
+        return $base;
     }
 
     protected function beforeDelete(Request $r, array $row): ?string

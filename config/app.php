@@ -22,6 +22,7 @@ return [
         'charge_connect_on_zero'   => false,
         'prepaid_hard_cap_seconds' => 7200,
         'media_policy'             => 'relay',
+        'codecs'                   => 'PCMU,PCMA,G729,GSM,telephone-event',
     ],
 
     'integrations' => [

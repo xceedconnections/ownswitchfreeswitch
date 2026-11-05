@@ -8,6 +8,7 @@ use Ownswitch\App;
 use Ownswitch\Http\Request;
 use Ownswitch\Http\Response;
 use Ownswitch\Services\Settings\SettingsService;
+use Ownswitch\Support\SipCodecs;
 
 final class SettingsController extends BaseController
 {
@@ -23,6 +24,7 @@ final class SettingsController extends BaseController
             'kill_switch' => '0',
             'switch_name' => '',
             'prepaid_hard_cap_seconds' => '7200',
+            'default_codecs' => SipCodecs::defaultStorage($this->db()),
         ];
         $values = [];
         foreach (SettingsService::SCHEMA as $k => $_) {
@@ -31,12 +33,16 @@ final class SettingsController extends BaseController
                 $values[$k] = $defaults[$k];
             }
         }
+        if (($values['default_codecs'] ?? '') === '') {
+            $values['default_codecs'] = SipCodecs::defaultStorage($this->db());
+        }
         return $this->view('settings/edit', [
             'title' => 'Settings',
             'schema' => SettingsService::SCHEMA,
             'values' => $values,
             'errors' => [],
             'logoUrl' => $this->logoPublicUrl($values['switch_logo'] ?? ''),
+            'codecOptions' => SipCodecs::formOptions(),
         ]);
     }
 
@@ -49,7 +55,11 @@ final class SettingsController extends BaseController
             if ($type === 'logo') {
                 continue; // handled via upload
             }
-            [$v, $err] = SettingsService::validate($k, $r->post[$k] ?? null);
+            $raw = $r->post[$k] ?? null;
+            if ($type === 'codecs' && is_array($raw)) {
+                $raw = implode(',', array_map('strval', $raw));
+            }
+            [$v, $err] = SettingsService::validate($k, $raw);
             if ($err !== null) {
                 $errors[$k] = $err;
             } else {
@@ -80,6 +90,7 @@ final class SettingsController extends BaseController
                 'values' => $values,
                 'errors' => $errors,
                 'logoUrl' => $this->logoPublicUrl($values['switch_logo'] ?? ''),
+                'codecOptions' => SipCodecs::formOptions(),
             ], 422);
         }
 

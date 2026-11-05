@@ -1,10 +1,11 @@
 <?php
-/** @var array $schema @var array $values @var array<string,string> $errors @var ?string $logoUrl */
+/** @var array $schema @var array $values @var array<string,string> $errors @var ?string $logoUrl @var array<string,string> $codecOptions */
+$codecOptions = $codecOptions ?? [];
 ?>
 <div class="os-page-head">
     <div>
         <h1 class="os-page-title">Settings</h1>
-        <p class="os-page-sub">Branding, billing, capacity limits, failover and emergency kill switch</p>
+        <p class="os-page-sub">Branding, billing, codecs, capacity limits, failover and emergency kill switch</p>
     </div>
 </div>
 <form method="post" action="<?= e(url('/settings')) ?>" enctype="multipart/form-data" class="os-panel col-12">
@@ -47,6 +48,22 @@
                         <option value="direct"<?= $val === 'direct' ? ' selected' : '' ?>>Direct — peer-to-peer RTP (bypass_media)</option>
                         <option value="record"<?= $val === 'record' ? ' selected' : '' ?>>Record — relay + record_session</option>
                     </select>
+                <?php elseif ($type === 'codecs'):
+                    $selected = array_values(array_filter(array_map('trim', explode(',', (string) $val)), static fn ($x) => $x !== ''));
+                    ?>
+                    <label class="form-label"><?= e($label) ?></label>
+                    <div class="row g-2">
+                        <?php foreach ($codecOptions as $code => $optLabel): ?>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="form-check">
+                                    <input class="form-check-input<?= $err ? ' is-invalid' : '' ?>" type="checkbox"
+                                           name="<?= e($key) ?>[]" id="<?= e($key . '_' . $code) ?>"
+                                           value="<?= e($code) ?>"<?= in_array($code, $selected, true) ? ' checked' : '' ?>>
+                                    <label class="form-check-label" for="<?= e($key . '_' . $code) ?>"><?= e($optLabel) ?></label>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
                 <?php else: ?>
                     <label class="form-label" for="<?= e($key) ?>"><?= e($label) ?></label>
                     <input class="form-control<?= $err ? ' is-invalid' : '' ?>" id="<?= e($key) ?>" name="<?= e($key) ?>" value="<?= e($val) ?>" maxlength="<?= in_array($key, ['switch_name', 'failover_sip_codes'], true) ? '80' : '32' ?>">

@@ -66,16 +66,23 @@ final class SipPeerOptions
     ];
 
     /** Individual codecs for multiselect chips (stored comma-separated). */
+    public static function codecs(): array
+    {
+        return SipCodecs::formOptions();
+    }
+
+    /** @deprecated use codecs() — kept for any old references */
     public const CODECS = [
-        'PCMU' => 'G.711 μ-law (ulaw)',
+        'PCMU' => 'G.711 μ-law (ulaw / G711)',
         'PCMA' => 'G.711 A-law (alaw)',
         'G729' => 'G.729',
         'GSM' => 'GSM',
-        'opus' => 'Opus',
+        'OPUS' => 'Opus',
         'G722' => 'G.722',
         'iLBC' => 'iLBC',
-        'speex' => 'Speex',
+        'SPEEX' => 'Speex',
         'G723' => 'G.723',
         'G726' => 'G.726',
+        'telephone-event' => 'telephone-event (DTMF)',
     ];
 }

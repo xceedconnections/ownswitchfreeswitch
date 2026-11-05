@@ -10,6 +10,7 @@ use Ownswitch\Http\Response;
 use Ownswitch\Services\Switching\FreeswitchCallFlow;
 use Ownswitch\Support\Crypto;
 use Ownswitch\Support\MediaPolicy;
+use Ownswitch\Support\SipCodecs;
 use Ownswitch\Support\SipHosts;
 
 /** FreeSWITCH mod_xml_curl + mod_xml_cdr. Loopback nginx only. */
@@ -172,6 +173,13 @@ final class FreeswitchXmlController
         }
         if (strtolower((string) ($row['dtmf_pass'] ?? 'yes')) === 'no') {
             $vars .= "          <variable name=\"drop_dtmf\" value=\"true\"/>\n";
+        }
+        // Only when codecs are set — omit keeps Sofia profile defaults (no REG impact).
+        $codecStr = SipCodecs::toAbsoluteCodecString(
+            isset($row['codecs']) ? (string) $row['codecs'] : null
+        );
+        if ($codecStr !== '') {
+            $vars .= "          <variable name=\"absolute_codec_string\" value=\"" . $this->x($codecStr) . "\"/>\n";
         }
         // Domain-level dial-string is enough; avoid duplicate user dial-string.
         return "      <user id=\"" . $this->x($user) . "\">\n"

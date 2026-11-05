@@ -4,29 +4,58 @@ declare(strict_types=1);
 
 namespace Ownswitch\Support;
 
-/** Canonical SIP codec catalogue for trunk multi-select (Magnus-style). */
+use Ownswitch\Services\Settings\SettingsService;
+use PDO;
+
+/** Canonical SIP codec catalogue + FreeSWITCH absolute_codec_string helpers. */
 final class SipCodecs
 {
-    /** value => label */
+    /** value => short FreeSWITCH / SDP style label for chips */
     public const OPTIONS = [
-        'G729' => 'g729',
-        'G723' => 'g723',
-        'GSM' => 'gsm',
-        'G726' => 'g726',
+        'PCMU' => 'G.711 μ-law (ulaw / G711)',
+        'PCMA' => 'G.711 A-law (alaw)',
+        'G729' => 'G.729',
+        'G729A' => 'G.729A',
+        'GSM' => 'GSM',
+        'G722' => 'G.722',
+        'G723' => 'G.723',
+        'G726' => 'G.726',
+        'OPUS' => 'Opus',
+        'iLBC' => 'iLBC',
+        'SPEEX' => 'Speex',
+        'AMR' => 'AMR',
+        'AMR-WB' => 'AMR-WB',
+        'H261' => 'H.261 (video)',
+        'H263' => 'H.263 (video)',
+        'H263P' => 'H.263+ (video)',
+        'H264' => 'H.264 (video)',
+        'VP8' => 'VP8 (video)',
+        'telephone-event' => 'telephone-event (DTMF)',
+    ];
+
+    /** Default when Settings → Default codecs is empty. */
+    public const DEFAULT_LIST = ['PCMU', 'PCMA', 'G729', 'GSM', 'telephone-event'];
+
+    /** FreeSWITCH absolute_codec_string tokens (canonical portal → FS). */
+    private const FS_NAMES = [
+        'PCMU' => 'PCMU',
+        'PCMA' => 'PCMA',
+        'G729' => 'G729',
+        'G729A' => 'G729',
+        'GSM' => 'GSM',
+        'G722' => 'G722',
+        'G723' => 'G723',
+        'G726' => 'G726',
         'OPUS' => 'opus',
-        'iLBC' => 'ilbc',
-        'PCMA' => 'alaw',
-        'PCMU' => 'ulaw',
-        'G722' => 'g722',
+        'iLBC' => 'iLBC',
         'SPEEX' => 'speex',
-        'H261' => 'h261',
-        'H263' => 'h263',
-        'H263P' => 'h263p',
-        'H264' => 'h264',
-        'VP8' => 'vp8',
-        'G729A' => 'g729a',
-        'AMR' => 'amr',
-        'AMR-WB' => 'amr-wb',
+        'AMR' => 'AMR',
+        'AMR-WB' => 'AMR-WB',
+        'H261' => 'H261',
+        'H263' => 'H263',
+        'H263P' => 'H263-1998',
+        'H264' => 'H264',
+        'VP8' => 'VP8',
         'telephone-event' => 'telephone-event',
     ];
 
@@ -65,6 +94,12 @@ final class SipCodecs
         'dtmf' => 'telephone-event',
     ];
 
+    /** @return array<string,string> */
+    public static function formOptions(): array
+    {
+        return self::OPTIONS;
+    }
+
     /** @return list<string> */
     public static function normalizeList(mixed $raw): array
     {
@@ -82,7 +117,6 @@ final class SipCodecs
             $key = strtolower($p);
             $canon = self::ALIASES[$key] ?? (isset(self::OPTIONS[$p]) ? $p : null);
             if ($canon === null) {
-                // allow exact canonical case-insensitive match
                 foreach (self::OPTIONS as $code => $_) {
                     if (strcasecmp($code, $p) === 0) {
                         $canon = $code;
@@ -101,5 +135,46 @@ final class SipCodecs
     {
         $list = self::normalizeList($raw);
         return $list === [] ? null : implode(',', $list);
+    }
+
+    /** Comma list for DB / forms from Settings (or built-in default). */
+    public static function defaultStorage(?PDO $pdo = null): string
+    {
+        if ($pdo !== null) {
+            try {
+                $from = (new SettingsService($pdo))->get('default_codecs', '');
+                $stored = self::toStorage($from);
+                if ($stored !== null) {
+                    return $stored;
+                }
+            } catch (\Throwable) {
+            }
+        }
+        return implode(',', self::DEFAULT_LIST);
+    }
+
+    /**
+     * Resolve row codecs: empty/null → system default. Returns storage string (never empty).
+     */
+    public static function resolve(?string $stored, ?PDO $pdo = null): string
+    {
+        $list = self::normalizeList($stored);
+        if ($list !== []) {
+            return implode(',', $list);
+        }
+        return self::defaultStorage($pdo);
+    }
+
+    /** FreeSWITCH absolute_codec_string (empty if nothing usable). */
+    public static function toAbsoluteCodecString(?string $stored): string
+    {
+        $fs = [];
+        foreach (self::normalizeList($stored) as $code) {
+            $name = self::FS_NAMES[$code] ?? null;
+            if ($name !== null && !in_array($name, $fs, true)) {
+                $fs[] = $name;
+            }
+        }
+        return implode(',', $fs);
     }
 }

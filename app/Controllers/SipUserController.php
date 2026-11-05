@@ -14,6 +14,7 @@ use Ownswitch\Services\Sip\SipOptionsProbe;
 use Ownswitch\Support\Crypto;
 use Ownswitch\Support\DstFormat;
 use Ownswitch\Support\MediaPolicy;
+use Ownswitch\Support\SipCodecs;
 use Ownswitch\Support\SipHosts;
 use Ownswitch\Support\SipPeerOptions;
 
@@ -297,6 +298,17 @@ final class SipUserController extends CrudController
                 'section' => 'Routing & media',
             ],
             [
+                'name' => 'codecs',
+                'label' => 'Codecs',
+                'type' => 'multiselect',
+                'options' => SipCodecs::formOptions(),
+                'add_label' => '+ Add codec…',
+                'wide' => true,
+                'default' => SipCodecs::defaultStorage($this->db()),
+                'help' => 'Offer order for FreeSWITCH absolute_codec_string (G729, G711/ulaw/alaw, GSM, Opus, …). Blank on save keeps Settings → Default codecs. Does not affect REGISTER.',
+                'section' => 'Routing & media',
+            ],
+            [
                 'name' => 'max_channels',
                 'label' => 'Call limit (CC)',
                 'type' => 'int',
@@ -551,6 +563,19 @@ final class SipUserController extends CrudController
                 isset($data['media_policy']) ? (string) $data['media_policy'] : null
             );
         }
+        if (array_key_exists('codecs', $data)) {
+            $stored = SipCodecs::toStorage($data['codecs'] ?? null);
+            if ($stored === null) {
+                // Create → Settings default. Edit with blank chips → keep previous (avoid gateway/XML churn).
+                $data['codecs'] = $existing === null
+                    ? SipCodecs::defaultStorage($this->db())
+                    : ($existing['codecs'] ?? null);
+            } else {
+                $data['codecs'] = $stored;
+            }
+        } elseif ($existing === null) {
+            $data['codecs'] = SipCodecs::defaultStorage($this->db());
+        }
         $data['dst_format'] = DstFormat::normalize(
             isset($data['dst_format']) ? (string) $data['dst_format'] : null
         );
@@ -778,6 +803,9 @@ final class SipUserController extends CrudController
         }
         if (!isset($values['max_cps']) || $values['max_cps'] === '' || $values['max_cps'] === null) {
             $values['max_cps'] = $existing['max_cps'] ?? '1';
+        }
+        if ($existing === null && (trim((string) ($values['codecs'] ?? '')) === '')) {
+            $values['codecs'] = SipCodecs::defaultStorage($this->db());
         }
         return $values;
     }

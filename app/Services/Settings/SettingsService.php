@@ -31,6 +31,11 @@ final class SettingsService
             'media',
             'FreeSWITCH: Relay = RTP through this switch (bypass_media=false). Direct = peer-to-peer RTP (bypass_media=true). Record = Relay + record_session to recordings/. Used when a SIP user leaves Media at Default.',
         ],
+        'default_codecs'              => [
+            'Default codecs',
+            'codecs',
+            'Pre-selected when creating a new SIP user or trunk (order = preference). FreeSWITCH absolute_codec_string. Softphones/vendors still negotiate within this list.',
+        ],
         'recording_retention_days'    => ['Recording retention (days)', 'int', 'Days to keep FreeSWITCH record_session WAVs under recordings/ (cleanup job).'],
         'switch_logo'                 => ['Switch logo', 'logo', 'PNG/JPG/WEBP/SVG, max 2 MB. Shown in the top navigation for all users.'],
         'switch_name'                 => ['Switch display name', 'text', 'Shown in the portal footer (not the header). Leave blank for “Ownswitch”.'],
@@ -69,6 +74,7 @@ final class SettingsService
             'default_carrier_initial'     => 'carrier_initial',
             'default_carrier_subsequent'  => 'carrier_subsequent',
             'default_media_policy'        => 'media_policy',
+            'default_codecs'              => 'codecs',
             default                       => $key,
         };
         $v = App::config('app.defaults.' . $cfgKey);
@@ -126,6 +132,12 @@ final class SettingsService
                 return preg_match('/^\d+(\.\d{1,8})?$/', $v) ? [$v, null] : [null, "{$label} must be a non-negative decimal."];
             case 'media':
                 return in_array($v, ['direct', 'relay', 'record'], true) ? [$v, null] : [null, "{$label} must be direct, relay or record."];
+            case 'codecs':
+                $stored = \Ownswitch\Support\SipCodecs::toStorage($raw);
+                if ($stored === null) {
+                    return [null, "{$label}: select at least one codec (e.g. PCMU, PCMA, G729)."];
+                }
+                return [$stored, null];
             case 'logo':
                 // Path set by controller after upload; empty keeps existing.
                 return [$v, null];

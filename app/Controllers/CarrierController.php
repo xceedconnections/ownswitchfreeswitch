@@ -14,6 +14,7 @@ use Ownswitch\Services\Sip\SipOptionsProbe;
 use Ownswitch\Services\Dnc\DncService;
 use Ownswitch\Support\Crypto;
 use Ownswitch\Support\DstFormat;
+use Ownswitch\Support\SipCodecs;
 use Ownswitch\Support\SipPeerOptions;
 
 /**
@@ -88,6 +89,17 @@ final class CarrierController extends CrudController
             ['name' => 'rate_cap', 'label' => 'CAP (max buy $/min)', 'type' => 'number', 'min' => 0, 'placeholder' => '0.008', 'list' => true, 'help' => 'Compared to this provider’s buy rate for the dialled prefix — independent of SIP user CAP. Example: CAP 0.008 allows buy 1213@0.005, skips this trunk for 1456@0.009 (try next trunk). Blank = no CAP.'],
             ['name' => 'dnc_group_id', 'label' => 'DNC group', 'type' => 'select', 'options' => $this->dncGroupOptions(), 'list' => true, 'help' => 'Instant 403 before the vendor is INVITEd when the dialled number is on this list. Prefer also assigning the same group on the SIP user for a pre-routing block. Leave blank for no trunk DNC.'],
             ['name' => 'dst_format', 'label' => 'Destination format', 'type' => 'select', 'options' => DstFormat::OPTIONS, 'default' => DstFormat::AS_IS, 'list' => true, 'help' => 'How the dialled number is sent to this vendor after strip/add prefix. Applied after the SIP user’s Destination format. Example: E.164 with + turns 12135550123 into +12135550123.'],
+            [
+                'name' => 'codecs',
+                'label' => 'Codecs',
+                'type' => 'multiselect',
+                'options' => SipCodecs::formOptions(),
+                'add_label' => '+ Add codec…',
+                'wide' => true,
+                'default' => SipCodecs::defaultStorage($this->db()),
+                'help' => 'Gateway absolute_codec_string (G729, G711/ulaw/alaw, GSM, …). Empty keeps Settings default on create. Changing codecs rewrites gateway XML only when the list actually changes.',
+                'section' => 'Media',
+            ],
             ['name' => 'latency_ms', 'label' => 'Reg / Latency', 'list' => true, 'list_only' => true],
             $status,
         ];
@@ -170,6 +182,18 @@ final class CarrierController extends CrudController
                 $data['initial_increment'] = $data['initial_increment'] ?? 6;
                 $data['subsequent_increment'] = $data['subsequent_increment'] ?? 6;
                 $data['media_policy'] = null;
+            }
+            if (array_key_exists('codecs', $data)) {
+                $stored = SipCodecs::toStorage($data['codecs'] ?? null);
+                if ($stored === null) {
+                    $data['codecs'] = $existing === null
+                        ? SipCodecs::defaultStorage($this->db())
+                        : ($existing['codecs'] ?? null);
+                } else {
+                    $data['codecs'] = $stored;
+                }
+            } elseif ($existing === null) {
+                $data['codecs'] = SipCodecs::defaultStorage($this->db());
             }
             foreach (['add_prefix', 'from_user', 'from_domain', 'cid_add_prefix', 'cid_remove_prefix'] as $k) {
                 if (array_key_exists($k, $data) && ($data[$k] === null || $data[$k] === '')) {

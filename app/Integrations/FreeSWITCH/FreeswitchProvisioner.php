@@ -599,6 +599,14 @@ final class FreeswitchProvisioner
             $lines[] = '  <param name="from-domain" value="' . $this->x($host) . '"/>';
         }
 
+        // Optional — only when portal has codecs set (avoids rewriting REGED gateways with NULL codecs).
+        $codecStr = \Ownswitch\Support\SipCodecs::toAbsoluteCodecString(
+            isset($trunk['codecs']) ? (string) $trunk['codecs'] : null
+        );
+        if ($codecStr !== '') {
+            $lines[] = '  <param name="absolute_codec_string" value="' . $this->x($codecStr) . '"/>';
+        }
+
         return "<include>\n"
             . '  <gateway name="gw-' . $id . "\">\n"
             . implode("\n", $lines) . "\n"
