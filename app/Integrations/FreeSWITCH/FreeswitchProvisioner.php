@@ -221,11 +221,11 @@ final class FreeswitchProvisioner
         if (preg_match('/^\s*Status\s+(\S+)/mi', $body, $m)) {
             $status = strtoupper(trim($m[1]));
         }
-        // FreeSWITCH prints "PingTime  0.02" (seconds) or sometimes ms — pingToMs normalises.
+        // Sofia gateway PingTime is already milliseconds (float), e.g. "5.35".
         if (preg_match('/^\s*PingTime\s+(\S+)/mi', $body, $m)) {
             $pingRaw = trim($m[1]);
         }
-        $latencyMs = $this->pingToMs($pingRaw);
+        $latencyMs = $this->gatewayPingToMs($pingRaw);
         $label = $state !== '' ? $state : ($status !== '' ? $status : 'unknown');
         // REGED = registered; NOREG = IP peer (no register); FAIL_WAIT / UNREGED = problem
         return ['state' => $state, 'status' => $status, 'label' => $label, 'latency_ms' => $latencyMs];
@@ -592,6 +592,20 @@ final class FreeswitchProvisioner
             . "</include>\n";
     }
 
+    /** Sofia gateway status PingTime (already ms as float). */
+    private function gatewayPingToMs(string $raw): int
+    {
+        if ($raw === '' || !is_numeric($raw)) {
+            return 0;
+        }
+        $n = (float) $raw;
+        if ($n <= 0) {
+            return 0;
+        }
+        return max(1, (int) round($n));
+    }
+
+    /** Directory registration ping-time (often seconds if &lt; 20). */
     private function pingToMs(string $raw): int
     {
         if ($raw === '' || !is_numeric($raw)) {
