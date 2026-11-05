@@ -28,31 +28,35 @@ if [[ ! -f "${MOD_DIR}/mod_xml_curl.so" ]]; then
   (
     cd "$work/fs"
     ./bootstrap.sh -j
-    # Enable xml_curl explicitly
-    sed -i -E 's|^#?xml_int/mod_xml_curl|xml_int/mod_xml_curl|' modules.conf
-    grep -E 'mod_xml_curl' modules.conf || echo 'xml_int/mod_xml_curl' >> modules.conf
+    # Match stage 75: skip signalwire/av; force-enable xml_curl + xml_cdr
+    sed -i -E \
+      -e 's/^(applications|formats)\/mod_av/#\1\/mod_av/' \
+      -e 's/^applications\/mod_signalwire/#applications\/mod_signalwire/' \
+      -e 's|^#?xml_int/mod_xml_curl|xml_int/mod_xml_curl|' \
+      -e 's|^#?xml_int/mod_xml_cdr|xml_int/mod_xml_cdr|' \
+      modules.conf
+    grep -qE '^xml_int/mod_xml_curl' modules.conf || echo 'xml_int/mod_xml_curl' >> modules.conf
     ./configure --prefix="${FS_PREFIX}" --sysconfdir="${FS_PREFIX}/conf" \
       --enable-portable-binary --disable-dependency-tracking
-    make -j"$(nproc)" modules/xml_int/mod_xml_curl
-    make -C src/mod/xml_int/mod_xml_curl install || make install
+    make -j"$(nproc)" -C src/mod/xml_int/mod_xml_curl
+    make -C src/mod/xml_int/mod_xml_curl install
   )
   ldconfig
-  [[ -f "${MOD_DIR}/mod_xml_curl.so" ]] || {
-    # Fallback: copy from build tree
+  if [[ ! -f "${MOD_DIR}/mod_xml_curl.so" ]]; then
     find "$work/fs" -name 'mod_xml_curl.so' -exec cp -av {} "${MOD_DIR}/" \;
-  }
+  fi
   [[ -f "${MOD_DIR}/mod_xml_curl.so" ]] || { echo "FATAL: mod_xml_curl.so still missing"; exit 1; }
   chown freeswitch:freeswitch "${MOD_DIR}/mod_xml_curl.so" 2>/dev/null || true
   trap - EXIT
   rm -rf "$work"
 fi
 
-# Ensure modules.conf.xml loads it
 MODS="${FS_PREFIX}/conf/autoload_configs/modules.conf.xml"
 if [[ -f "$MODS" ]] && ! grep -q '<load module="mod_xml_curl"/>' "$MODS"; then
   sed -i 's#</modules>#    <load module="mod_xml_curl"/>\n</modules>#' "$MODS"
 fi
-# Fix gateway include: profile XML paths are relative to sip_profiles/, so use external/*.xml
+
+# Profile XML includes are relative to sip_profiles/ → external/*.xml
 EXT_XML="${FS_PREFIX}/conf/sip_profiles/external.xml"
 GOOD='<X-PRE-PROCESS cmd="include" data="external/*.xml"/>'
 if [[ -f "$EXT_XML" ]]; then
