@@ -246,7 +246,7 @@ final class CarrierController extends CrudController
             if ($sync['warnings'] !== []) {
                 App::session()->flash('warning', 'Trunk saved with warnings: ' . mb_substr(implode(' | ', $sync['warnings']), 0, 300));
             }
-            $mode = strtolower((string) ($row['auth_mode'] ?? ($data['auth_mode'] ?? 'ip')));
+            $mode = strtolower((string) ((is_array($row) ? ($row['auth_mode'] ?? null) : null) ?? ($data['auth_mode'] ?? 'ip')));
             if ($mode === 'register') {
                 $st = $prov->gatewayStatus($id);
                 return 'Trunk pushed to FreeSWITCH. REGISTER state: '
