@@ -19,13 +19,13 @@ final class SettingsService
         'prepaid_hard_cap_seconds'    => [
             'Prepaid hard max call duration (s)',
             'int',
-            'System default max call length in seconds (e.g. 7200 = 2 hours). Used when a SIP user or trunk leaves Max call duration at 0 / Default. Also sets OpenSIPS dialog timeout.',
+            'System default max call length in seconds (e.g. 7200 = 2 hours). Used when a SIP user or trunk leaves Max call duration at 0 / Default. Applied by FreeSWITCH dialplan (sched_hangup).',
         ],
         'system_max_concurrent'       => ['System max concurrent calls', 'int0', '0 = unlimited. Soft cap for capacity planning and health alerts.'],
         'system_max_cps'              => ['System max calls per second', 'int0', '0 = unlimited. Soft CPS guidance for the switch.'],
-        'failover_max_retries'        => ['Failover max trunk attempts', 'int', 'How many trunks to try before giving up (1–20)'],
+        'failover_max_retries'        => ['Failover max trunk attempts', 'int', 'How many trunks FreeSWITCH will try before giving up (1–20)'],
         'failover_sip_codes'          => ['Failover SIP codes', 'text', 'Comma-separated SIP codes that trigger next trunk (e.g. 408,480,486,503)'],
-        'kill_switch'                 => ['Emergency kill switch', 'bool', 'When on, new outbound calls should be rejected (portal flag + OpenSIPS sync)'],
+        'kill_switch'                 => ['Emergency kill switch', 'bool', 'When on, FreeSWITCH dialplan rejects new outbound calls'],
         'default_media_policy'        => [
             'Default media policy',
             'media',

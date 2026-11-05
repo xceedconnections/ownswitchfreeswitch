@@ -71,7 +71,7 @@
                 <td class="os-mono small text-muted"><?= e(mb_substr((string) ($c['callid'] ?? ''), 0, 40)) ?></td>
                 <?php if (!empty($canHangup)): ?>
                 <td class="text-end">
-                    <form method="post" action="<?= e(url('/calls-online/hangup')) ?>" class="d-inline" data-os-hangup data-confirm="Hang up this call? OpenSIPS will send BYE to both sides.">
+                    <form method="post" action="<?= e(url('/calls-online/hangup')) ?>" class="d-inline" data-os-hangup data-confirm="Hang up this call? FreeSWITCH will send BYE to both sides.">
                         <?= csrf_field() ?>
                         <input type="hidden" name="callid" value="<?= e((string) ($c['callid'] ?? '')) ?>">
                         <input type="hidden" name="from_tag" value="<?= e((string) ($c['from_tag'] ?? '')) ?>">

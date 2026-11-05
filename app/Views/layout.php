@@ -161,7 +161,7 @@ if ($user && in_array($user['role'] ?? '', ['customer_owner', 'customer_tech'], 
     <div class="os-footer-inner">
         <span class="os-footer-brand"><?= e($footerBrand) ?></span>
         <span class="os-footer-sep" aria-hidden="true">·</span>
-        <span class="os-footer-meta">OpenSIPS VoIP billing</span>
+        <span class="os-footer-meta">FreeSWITCH VoIP billing</span>
     </div>
 </footer>
 <?php else: ?>
@@ -171,7 +171,7 @@ if ($user && in_array($user['role'] ?? '', ['customer_owner', 'customer_tech'], 
             <div class="alert alert-<?= e(in_array($f['type'], ['success', 'danger', 'warning', 'info'], true) ? $f['type'] : 'info') ?>" role="alert"><?= e($f['message']) ?></div>
         <?php endforeach; ?>
         <?= $content ?>
-        <p class="os-auth-foot mb-0"><?= e($footerBrand) ?> · OpenSIPS VoIP billing</p>
+        <p class="os-auth-foot mb-0"><?= e($footerBrand) ?> · FreeSWITCH VoIP billing</p>
     </div>
 </main>
 <?php endif; ?>

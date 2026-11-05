@@ -366,8 +366,13 @@ final class FreeswitchProvisioner
             $transport = 'udp';
         }
         $mode = strtolower((string) ($trunk['auth_mode'] ?? 'ip'));
+        // register = REGISTER to carrier; invite = auth on outbound INVITE only; ip = no auth.
         $register = $mode === 'register' ? 'true' : 'false';
         $user = trim((string) ($trunk['auth_username'] ?? ''));
+        $fromUser = trim((string) ($trunk['from_user'] ?? ''));
+        if ($fromUser === '') {
+            $fromUser = $user;
+        }
         $pass = '';
         if (!empty($trunk['auth_secret_enc'])) {
             try {
@@ -376,6 +381,7 @@ final class FreeswitchProvisioner
                 $pass = '';
             }
         }
+        $ping = ((string) ($trunk['qualify'] ?? 'yes') === 'no') ? '0' : '30';
         $params = '<param name="realm" value="' . $this->x($host) . '"/>'
             . '<param name="proxy" value="' . $this->x($proxy) . '"/>'
             . '<param name="register" value="' . $register . '"/>'
@@ -383,12 +389,18 @@ final class FreeswitchProvisioner
             . '<param name="retry-seconds" value="30"/>'
             . '<param name="expire-seconds" value="600"/>'
             . '<param name="caller-id-in-from" value="true"/>'
-            . '<param name="ping" value="30"/>';
-        if ($user !== '') {
-            $params .= '<param name="username" value="' . $this->x($user) . '"/>'
-                . '<param name="from-user" value="' . $this->x($user) . '"/>';
+            . '<param name="ping" value="' . $ping . '"/>';
+        if ($user !== '' && in_array($mode, ['register', 'invite'], true)) {
+            $params .= '<param name="username" value="' . $this->x($user) . '"/>';
         }
-        if ($pass !== '') {
+        if ($fromUser !== '') {
+            $params .= '<param name="from-user" value="' . $this->x($fromUser) . '"/>';
+        }
+        $fromDomain = trim((string) ($trunk['from_domain'] ?? ''));
+        if ($fromDomain !== '') {
+            $params .= '<param name="from-domain" value="' . $this->x($fromDomain) . '"/>';
+        }
+        if ($pass !== '' && in_array($mode, ['register', 'invite'], true)) {
             $params .= '<param name="password" value="' . $this->x($pass) . '"/>';
         }
         return '<include><gateway name="gw-' . $id . '">' . $params . '</gateway></include>' . "\n";

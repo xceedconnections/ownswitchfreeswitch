@@ -9,7 +9,7 @@ use Ownswitch\Http\Response;
 use Ownswitch\Integrations\FreeSWITCH\FreeswitchProvisioner;
 use Ownswitch\Repositories\CustomerRepository;
 
-/** Live calls from OpenSIPS dialogs — stats, user filter, VICIdial-style colors. */
+/** Live calls from FreeSWITCH ESL channels — stats, user filter, VICIdial-style colors. */
 final class CallsOnlineController extends BaseController
 {
     public function index(Request $r, array $p = []): Response

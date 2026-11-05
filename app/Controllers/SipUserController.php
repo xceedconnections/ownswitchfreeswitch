@@ -17,7 +17,7 @@ use Ownswitch\Support\MediaPolicy;
 use Ownswitch\Support\SipPeerOptions;
 
 /**
- * SIP Users — OpenSIPS auth, fixed-host port, media/record, and peer signalling params.
+ * SIP Users — FreeSWITCH directory auth, fixed-host port, media/record, and peer signalling params.
  */
 final class SipUserController extends CrudController
 {
@@ -26,7 +26,7 @@ final class SipUserController extends CrudController
     protected string $plural = 'SIP Users';
     /** Customers may view SIP users only — staff/reseller create and edit. */
     protected array $writeRoles = ['super_admin', 'admin', 'reseller'];
-    protected string $emptyHint = 'No SIP users. Create an account so a phone or PBX can register to OpenSIPS.';
+    protected string $emptyHint = 'No SIP users. Create an account so a phone or PBX can register to FreeSWITCH.';
 
     private ?string $plainPassword = null;
 
@@ -116,7 +116,7 @@ final class SipUserController extends CrudController
                 'label' => 'Host',
                 'max' => 190,
                 'default' => 'dynamic',
-                'help' => 'Dynamic mode uses “dynamic” (REGISTER from any IP). IP based: enter the PBX IP (e.g. ViciDial 192.131.111.144) — OpenSIPS ACL + firewall auto-update.',
+                'help' => 'Dynamic mode uses “dynamic” (REGISTER from any IP). IP based: enter the PBX IP (e.g. ViciDial) — matched by source IP in FreeSWITCH dialplan + firewall auto-update.',
                 'section' => 'Account',
             ],
             [
@@ -189,7 +189,7 @@ final class SipUserController extends CrudController
                 'type' => 'select',
                 'options' => SipPeerOptions::CONNECTION_MODE,
                 'default' => 'dynamic',
-                'help' => 'Dynamic = username/password REGISTER. IP based = fixed IP peer (no digest); Host IP + port go to OpenSIPS ACL and firewall automatically.',
+                'help' => 'Dynamic = username/password REGISTER to FreeSWITCH. IP based = fixed IP peer (no digest); Host IP + port update the firewall automatically.',
                 'section' => 'Network',
             ],
             [
@@ -199,7 +199,7 @@ final class SipUserController extends CrudController
                 'min' => 0,
                 'max' => 65535,
                 'default' => '5060',
-                'help' => 'IP based: peer signalling port (e.g. 7777 for ViciDial). Matched in OpenSIPS address ACL and opened on the firewall for that IP. 0 = any port (ACL only).',
+                'help' => 'IP based: peer signalling port (e.g. 7777 for ViciDial). Opened on the firewall for that IP. 0 = any port.',
                 'section' => 'Network',
             ],
             [
@@ -235,7 +235,7 @@ final class SipUserController extends CrudController
                 'type' => 'select',
                 'options' => SipPeerOptions::YES_NO,
                 'default' => 'no',
-                'help' => 'Optional OPTIONS latency only. Live/Registered always follows OpenSIPS location for Dynamic SIP users (Asterisk/ViciDial). Fixed-IP peers use OPTIONS when Qualify=Yes.',
+                'help' => 'Optional OPTIONS latency. Live/Registered follows FreeSWITCH Sofia registrations for Dynamic SIP users. Fixed-IP peers use OPTIONS when Qualify=Yes.',
                 'section' => 'Network',
             ],
 
@@ -338,7 +338,7 @@ final class SipUserController extends CrudController
                 'type' => 'select',
                 'options' => SipPeerOptions::DTMF_PASS,
                 'default' => 'yes',
-                'help' => 'Block = OpenSIPS absorbs SIP INFO DTMF and strips telephone-event so keypad digits are not passed to the far end.',
+                'help' => 'Block = absorb SIP INFO DTMF / strip telephone-event so keypad digits are not passed to the far end.',
                 'section' => 'Routing & media',
             ],
             [
@@ -477,7 +477,7 @@ final class SipUserController extends CrudController
             $data['sip_host'] = $host;
             $port = (int) ($data['sip_port'] ?? ($existing['sip_port'] ?? 5060));
             if ($port < 0 || $port > 65535) {
-                throw new \DomainException('SIP port must be 0–65535 (0 = any port in OpenSIPS ACL).');
+                throw new \DomainException('SIP port must be 0–65535 (0 = any port).');
             }
             $data['sip_port'] = $port;
             // IP peers: clear digest secrets from portal + OpenSIPS

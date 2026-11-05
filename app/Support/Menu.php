@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ownswitch\Support;
 
 /**
- * Navigation — OpenSIPS-backed Phase 1 features (no duplicate paths).
+ * Navigation — FreeSWITCH-backed portal features (no duplicate paths).
  */
 final class Menu
 {

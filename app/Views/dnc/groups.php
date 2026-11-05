@@ -53,4 +53,4 @@ $canWrite = !empty($canWrite);
     </div>
 <?php endif; ?>
 </div>
-<p class="small text-muted mt-2 mb-0">OpenSIPS checks DNC with Redis (O(1)) or an indexed MySQL cache — not PHP — so bulk dialing stays fast.</p>
+<p class="small text-muted mt-2 mb-0">FreeSWITCH dialplan checks DNC in MySQL (indexed) on each call — keep groups lean for bulk dialing.</p>

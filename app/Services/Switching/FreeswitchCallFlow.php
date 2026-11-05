@@ -11,11 +11,13 @@ use Ownswitch\Services\Billing\RatingService;
 use Ownswitch\Services\Cdr\CdrIngestService;
 use Ownswitch\Services\Billing\RateResolver;
 use Ownswitch\Services\Settings\SettingsService;
+use Ownswitch\Support\Destination;
+use Ownswitch\Support\DstFormat;
 use PDO;
 
 /**
- * Same portal call flow, executed by FreeSWITCH xml_curl instead of OpenSIPS.
- * REGISTER is the directory. INVITE is this dialplan: user, pause/balance, DNC, rate cap, trunk waterfall, DID.
+ * Portal call flow for FreeSWITCH xml_curl.
+ * REGISTER → directory. INVITE → this dialplan (authz, policies, prepaid, DNC, TG waterfall, DID).
  */
 final class FreeswitchCallFlow
 {
@@ -25,7 +27,13 @@ final class FreeswitchCallFlow
 
     public function dialplan(Request $r): string
     {
-        $dest = preg_replace('/\D+/', '', (string) $r->input('Caller-Destination-Number', '')) ?? '';
+        $settings = new SettingsService($this->db);
+        if ($settings->bool('kill_switch')) {
+            return $this->reject('503', 'CALL_REJECTED');
+        }
+
+        $rawDest = (string) $r->input('Caller-Destination-Number', '');
+        $dest = Destination::normalize($rawDest);
         $user = $this->sipUserFromRequest($r);
         $ip = (string) $r->input('variable_sip_network_ip', $r->input('network_addr', $r->input('ip', '')));
         $account = $this->findAccount($user, $ip);
@@ -43,10 +51,17 @@ final class FreeswitchCallFlow
         if ($dest === '') {
             return $this->reject('484', 'INVALID_NUMBER_FORMAT');
         }
+
+        $cid = (int) ($account['customer_id'] ?? 0);
+        if ($this->destinationBlocked($cid, $dest)) {
+            return $this->reject('403', 'CALL_REJECTED');
+        }
+
         $groupId = (int) ($account['dnc_group_id'] ?? 0);
         if ($groupId > 0 && $this->dncHit($groupId, $dest)) {
             return $this->reject('403', 'CALL_REJECTED');
         }
+
         $callId = trim((string) $r->input('variable_sip_call_id', $r->input('Unique-ID', '')));
         if ($callId === '') {
             $callId = 'fs-' . bin2hex(random_bytes(8));
@@ -55,33 +70,67 @@ final class FreeswitchCallFlow
         if ($maxSeconds === false) {
             return $this->reject('402', 'CALL_REJECTED');
         }
+
+        $resolver = new RateResolver($this->db, $settings);
+        $rate = $cid > 0 ? $resolver->customer($cid, $dest) : null;
+        if ($rate === null) {
+            return $this->reject('404', 'NO_ROUTE_DESTINATION');
+        }
+        if ($this->userOverCap($account, $rate)) {
+            return $this->reject('403', 'CALL_REJECTED');
+        }
+
+        // Align with RouteSimulator: SIP user TG override → tariff TG (not customers.routing_plan_id).
         $planId = (int) ($account['routing_plan_id'] ?? 0);
-        if ($planId <= 0) {
-            $planId = $this->customerPlanId((int) $account['customer_id']);
+        if ($planId <= 0 && !empty($rate['routing_plan_id'])) {
+            $planId = (int) $rate['routing_plan_id'];
         }
         $trunks = $this->trunksFor($planId, $dest);
         if ($trunks === []) {
             return $this->reject('503', 'NORMAL_TEMPORARY_FAILURE');
         }
-        $media = strtolower((string) ($account['media_policy'] ?? 'relay')) === 'direct' ? 'true' : 'false';
+
+        $maxAttempts = max(1, min(20, $settings->int('failover_max_retries', 5)));
+        $trunks = array_slice($trunks, 0, $maxAttempts);
+
+        $userFmt = DstFormat::normalize((string) ($account['dst_format'] ?? DstFormat::AS_IS));
+        $media = strtolower((string) ($account['media_policy'] ?? $settings->get('default_media_policy', 'relay') ?? 'relay'));
+        $bypass = $media === 'direct' ? 'true' : 'false';
+
         $bridges = [];
         foreach ($trunks as $t) {
-            $tid = (int) $t['id'];
-            $bridges[] = 'sofia/gateway/gw-' . $tid . '/' . $dest;
+            $bridges[] = $this->bridgeLeg($account, $t, $dest, $userFmt);
         }
         $data = implode('|', $bridges);
         $userName = (string) $account['username'];
+        $userMax = (int) ($account['max_call_duration'] ?? 0);
+        if ($userMax > 0) {
+            $maxSeconds = $maxSeconds > 0 ? min($maxSeconds, $userMax) : $userMax;
+        }
+        if ($maxSeconds <= 0) {
+            $maxSeconds = max(0, $settings->int('prepaid_hard_cap_seconds', 0));
+        }
         $cap = $maxSeconds > 0
             ? '<action application="sched_hangup" data="+' . $maxSeconds . ' ALLOTTED_TIMEOUT"/>'
             : '';
+        $failCodes = $this->continueOnFail($settings);
+
+        $limit = '';
+        $maxCh = (int) ($account['max_channels'] ?? 0);
+        if ($maxCh > 0) {
+            // Soft concurrent-call guard (requires mod_hash / limit; ignored if module absent).
+            $limit = '<action application="limit" data="hash outbound ' . $this->x($userName) . ' ' . $maxCh . '"/>';
+        }
+
         return $this->extension(
             'outbound',
             '.*',
-            '<action application="set" data="bypass_media=' . $media . '"/>'
+            '<action application="set" data="bypass_media=' . $bypass . '"/>'
             . '<action application="set" data="hangup_after_bridge=true"/>'
-            . '<action application="set" data="continue_on_fail=408,480,486,487,500,503,NORMAL_TEMPORARY_FAILURE,RECOVERY_ON_TIMER_EXPIRE,TIMEOUT,USER_BUSY,NO_ANSWER,CALL_REJECTED,UNALLOCATED_NUMBER"/>'
-            . '<action application="set" data="fail_on_single_reject=true"/>'
+            . '<action application="set" data="continue_on_fail=' . $this->x($failCodes) . '"/>'
+            . '<action application="set" data="fail_on_single_reject=false"/>'
             . '<action application="set" data="os_sip_user=' . $this->x($userName) . '"/>'
+            . $limit
             . $cap
             . '<action application="bridge" data="' . $this->x($data) . '"/>'
         );
@@ -115,12 +164,10 @@ final class FreeswitchCallFlow
         if ($start !== '' && ctype_digit($start)) {
             $start = gmdate('Y-m-d H:i:s', (int) $start);
         }
-        $gw = (string) ($vars['sofia_profile_name'] ?? '');
         $trunkId = null;
         if (preg_match('/gw-(\d+)/', (string) ($vars['last_bridge_to'] ?? $vars['bridge_channel'] ?? ''), $m)) {
             $trunkId = (int) $m[1];
         }
-        unset($gw);
         $svc = new CdrIngestService(
             $this->db,
             new RatingService(),
@@ -143,6 +190,129 @@ final class FreeswitchCallFlow
             'carrier_trunk_id' => $trunkId,
             'source_ip' => (string) ($vars['sip_network_ip'] ?? ''),
         ], 'freeswitch');
+    }
+
+    /** @param array<string,mixed> $account @param array<string,mixed> $trunk */
+    private function bridgeLeg(array $account, array $trunk, string $destDigits, string $userFmt): string
+    {
+        $tid = (int) $trunk['id'];
+        $dial = $this->applyDstFormat($destDigits, $userFmt);
+        $trunkFmt = DstFormat::normalize((string) ($trunk['dst_format'] ?? DstFormat::AS_IS));
+        if ($trunkFmt !== DstFormat::AS_IS) {
+            $dial = $this->applyDstFormat(Destination::normalize($dial), $trunkFmt);
+        }
+        $remove = (string) ($trunk['remove_prefix'] ?? '');
+        if ($remove !== '' && str_starts_with($dial, $remove)) {
+            $dial = substr($dial, strlen($remove));
+        }
+        $add = (string) ($trunk['add_prefix'] ?? '');
+        if ($add !== '') {
+            $dial = $add . $dial;
+        }
+
+        $cidNum = $this->outboundCallerId($account, $trunk);
+        $fromUser = trim((string) ($trunk['from_user'] ?? ''));
+        $fromDomain = trim((string) ($trunk['from_domain'] ?? ''));
+        $vars = [];
+        if ($cidNum !== '') {
+            $vars[] = 'origination_caller_id_number=' . $cidNum;
+            $vars[] = 'origination_caller_id_name=' . $cidNum;
+        }
+        if ($fromUser !== '') {
+            $vars[] = 'sip_invite_from_user=' . $fromUser;
+            $vars[] = 'effective_caller_id_number=' . $fromUser;
+        }
+        if ($fromDomain !== '') {
+            $vars[] = 'sip_invite_from_domain=' . $fromDomain;
+        }
+        $trunkMax = (int) ($trunk['max_call_duration'] ?? 0);
+        if ($trunkMax > 0) {
+            $vars[] = 'leg_timeout=' . $trunkMax;
+        }
+        $prefix = $vars !== [] ? '{' . implode(',', $vars) . '}' : '';
+        return $prefix . 'sofia/gateway/gw-' . $tid . '/' . $dial;
+    }
+
+    /** @param array<string,mixed> $account @param array<string,mixed> $trunk */
+    private function outboundCallerId(array $account, array $trunk): string
+    {
+        $mode = strtolower((string) ($account['caller_id_mode'] ?? 'as_is'));
+        $cid = trim((string) ($account['caller_id'] ?? ''));
+        if ($mode === 'force' && $cid !== '') {
+            return preg_replace('/[^\d+]/', '', $cid) ?? $cid;
+        }
+        if ($cid !== '') {
+            return preg_replace('/[^\d+]/', '', $cid) ?? $cid;
+        }
+        $from = trim((string) ($trunk['from_user'] ?? ''));
+        return $from !== '' ? $from : '';
+    }
+
+    private function applyDstFormat(string $digits, string $format): string
+    {
+        $digits = Destination::normalize($digits);
+        return match (DstFormat::normalize($format)) {
+            DstFormat::E164_PLUS => $digits === '' ? '' : (str_starts_with($digits, '+') ? $digits : '+' . $digits),
+            DstFormat::E164_DIGITS => ltrim($digits, '+'),
+            default => $digits,
+        };
+    }
+
+    private function continueOnFail(SettingsService $settings): string
+    {
+        $raw = trim((string) ($settings->get('failover_sip_codes', '408,480,486,487,500,503') ?? ''));
+        if ($raw === '') {
+            $raw = '408,480,486,487,500,503';
+        }
+        $codes = [];
+        foreach (preg_split('/[,\s]+/', $raw) ?: [] as $c) {
+            $c = trim($c);
+            if ($c !== '' && preg_match('/^\d{3}$/', $c)) {
+                $codes[] = $c;
+            }
+        }
+        if ($codes === []) {
+            $codes = ['408', '480', '486', '487', '500', '503'];
+        }
+        $extra = [
+            'NORMAL_TEMPORARY_FAILURE', 'RECOVERY_ON_TIMER_EXPIRE', 'TIMEOUT',
+            'USER_BUSY', 'NO_ANSWER', 'CALL_REJECTED', 'UNALLOCATED_NUMBER',
+        ];
+        return implode(',', array_merge($codes, $extra));
+    }
+
+    private function destinationBlocked(int $customerId, string $dest): bool
+    {
+        if ($customerId <= 0 || $dest === '') {
+            return false;
+        }
+        try {
+            $cands = Destination::candidates($dest);
+            if ($cands === []) {
+                return false;
+            }
+            $in = Destination::placeholders($cands);
+            $st = $this->db->prepare(
+                "SELECT action FROM destination_policies
+                 WHERE (customer_id IS NULL OR customer_id = ?) AND prefix IN ({$in})
+                 ORDER BY LENGTH(prefix) DESC LIMIT 1"
+            );
+            $st->execute([$customerId, ...$cands]);
+            $action = $st->fetchColumn();
+            return is_string($action) && strtolower($action) === 'block';
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** @param array<string,mixed> $account @param array<string,mixed> $rate */
+    private function userOverCap(array $account, array $rate): bool
+    {
+        $cap = $account['rate_cap'] ?? null;
+        if ($cap === null || $cap === '' || (float) $cap <= 0) {
+            return false;
+        }
+        return (float) ($rate['rate'] ?? 0) > (float) $cap;
     }
 
     /** @return array<string,mixed>|null */
@@ -184,10 +354,7 @@ final class FreeswitchCallFlow
         return null;
     }
 
-    /**
-     * Prepaid: reserve through PrepaidService. false = refuse (402).
-     * 0 = no hard cap (postpaid, or no tariff yet — CDR still rates the call).
-     */
+    /** @param array<string,mixed> $account */
     private function prepaidGate(array $account, string $dest, string $callId): int|false
     {
         $cid = (int) ($account['customer_id'] ?? 0);
@@ -207,7 +374,7 @@ final class FreeswitchCallFlow
         }
         $rate = (new RateResolver($this->db, new SettingsService($this->db)))->customer($cid, $dest);
         if ($rate === null) {
-            return 0;
+            return false;
         }
         try {
             $auth = (new PrepaidService($this->db, new LedgerService($this->db), new RatingService()))->authorize(
@@ -290,16 +457,6 @@ final class FreeswitchCallFlow
         return (bool) $st->fetchColumn();
     }
 
-    private function customerPlanId(int $customerId): int
-    {
-        if ($customerId <= 0) {
-            return 0;
-        }
-        $st = $this->db->prepare('SELECT routing_plan_id FROM customers WHERE id = ? LIMIT 1');
-        $st->execute([$customerId]);
-        return (int) ($st->fetchColumn() ?: 0);
-    }
-
     /** @return list<array<string,mixed>> */
     private function trunksFor(int $planId, string $dest): array
     {
@@ -309,6 +466,7 @@ final class FreeswitchCallFlow
         $st = $this->db->prepare(
             "SELECT t.* FROM routing_rules r
              JOIN carrier_trunks t ON t.id = r.carrier_trunk_id
+             JOIN carriers ca ON ca.id = t.carrier_id AND ca.status = 'active'
              WHERE r.routing_plan_id = ? AND r.status = 'active' AND t.status = 'active'
                AND (r.prefix = '*' OR ? LIKE CONCAT(r.prefix, '%'))
              ORDER BY CHAR_LENGTH(r.prefix) DESC, r.priority ASC"

@@ -21,7 +21,7 @@ final class SystemController extends BaseController
         $sipTip = 'Softphone: Domain=' . ($sipDomain !== '' ? $sipDomain : 'portal SIP domain')
             . ' · Port=5060 · Transport=UDP. If phones cannot register, on the server run: '
             . 'sudo bash /opt/ownswitch-src/deploy/fix-udp-5060.sh '
-            . '(opens host FW + OpenSIPS UDP; with /etc/ownswitch/hcloud.token also opens Hetzner Cloud Firewall). '
+            . '(opens host FW + FreeSWITCH SIP/RTP; with /etc/ownswitch/hcloud.token also opens Hetzner Cloud Firewall). '
             . 'Magnus IP-peer trunks never show Registered — only Register-mode user/pass do.';
         return $this->view('system/status', [
             'title' => 'System Status',

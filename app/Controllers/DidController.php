@@ -13,7 +13,7 @@ use Ownswitch\Services\Billing\LedgerService;
 use Ownswitch\Services\Billing\RatingService;
 
 /**
- * DID Providers / DID inventory / Assignments (inbound → SIP user via OpenSIPS dbaliases).
+ * DID Providers / DID inventory / Assignments (inbound → SIP user via FreeSWITCH dialplan).
  * kind: providers | dids | assignments
  */
 final class DidController extends CrudController
@@ -113,7 +113,7 @@ final class DidController extends CrudController
         return [
             ['name' => 'did_id', 'label' => 'DID', 'type' => 'select', 'required' => true, 'options' => $dids, 'list' => true, 'readonly_on_edit' => true],
             ['name' => 'customer_id', 'label' => 'User', 'type' => 'select', 'required' => true, 'options' => $customers, 'list' => true],
-            ['name' => 'sip_account_id', 'label' => 'Route to SIP user', 'type' => 'select', 'required' => true, 'options' => $sips, 'list' => true, 'help' => 'Inbound INVITE to this registered AOR (OpenSIPS alias → lookup)'],
+            ['name' => 'sip_account_id', 'label' => 'Route to SIP user', 'type' => 'select', 'required' => true, 'options' => $sips, 'list' => true, 'help' => 'Inbound INVITE bridges to this registered FreeSWITCH user'],
             ['name' => 'dest_type', 'label' => 'Call flow', 'type' => 'select', 'required' => true, 'default' => 'sip_user', 'options' => [
                 'sip_user' => 'SIP User (registered endpoint)',
             ], 'list' => true],

@@ -17,7 +17,7 @@ use Ownswitch\Support\DstFormat;
 use Ownswitch\Support\SipPeerOptions;
 
 /**
- * Providers + Trunks — OpenSIPS drouting / registrant fields only (no Asterisk peer junk).
+ * Providers + Trunks — FreeSWITCH Sofia gateway fields (no Asterisk peer junk).
  */
 final class CarrierController extends CrudController
 {
@@ -28,7 +28,7 @@ final class CarrierController extends CrudController
         $this->singular = $trunk ? 'Trunk' : 'Provider';
         $this->plural = $trunk ? 'Trunks' : 'Providers';
         $this->emptyHint = $trunk
-            ? 'No trunks. OpenSIPS: Host/port, optional digest REGISTER, strip/prefix, From rewrite, probe.'
+            ? 'No trunks. FreeSWITCH: Host/port, optional digest REGISTER, strip/prefix, From rewrite, OPTIONS ping.'
             : 'No providers yet. Add the upstream carrier, then add Trunks.';
     }
 
@@ -71,7 +71,7 @@ final class CarrierController extends CrudController
                 'ip' => 'IP peer',
                 'register' => 'REGISTER',
                 'invite' => 'Invite digest',
-            ], 'help' => 'OpenSIPS: IP → address table; Register → uac_registrant'],
+            ], 'help' => 'FreeSWITCH: IP = no auth; Register = Sofia REGISTER; Invite = digest on outbound only'],
             ['name' => 'auth_username', 'label' => 'Username', 'max' => 120],
             ['name' => 'auth_secret', 'label' => 'Password', 'type' => 'password', 'max' => 190, 'help' => 'Leave blank on edit to keep current.'],
             ['name' => 'add_prefix', 'label' => 'Add prefix', 'max' => 32, 'help' => 'Prepended to the dialled number toward the vendor (e.g. 9 → 912138007447)'],
@@ -82,7 +82,7 @@ final class CarrierController extends CrudController
             ['name' => 'cid_remove_prefix', 'label' => 'CID remove prefix', 'max' => 32],
             ['name' => 'cid_min_len', 'label' => 'Min CallerID length (digits)', 'type' => 'number', 'min' => 0, 'max' => 32, 'placeholder' => '11', 'help' => 'After trunk CID rewrite. USA+CC = 11. Blank/0 = off. Too short → 484 Wrong CallerID Length.'],
             ['name' => 'cid_max_len', 'label' => 'Max CallerID length (digits)', 'type' => 'number', 'min' => 0, 'max' => 32, 'placeholder' => '11', 'help' => 'After trunk CID rewrite. USA = 11. Blank/0 = off. Too long → 484 Wrong CallerID Length.'],
-            ['name' => 'qualify', 'label' => 'Probe gateway', 'type' => 'select', 'options' => SipPeerOptions::YES_NO, 'default' => 'yes', 'help' => 'OpenSIPS probe_mode'],
+            ['name' => 'qualify', 'label' => 'Probe gateway', 'type' => 'select', 'options' => SipPeerOptions::YES_NO, 'default' => 'yes', 'help' => 'FreeSWITCH Sofia OPTIONS ping'],
             ['name' => 'max_channels', 'label' => 'Channels', 'type' => 'int', 'min' => 0, 'max' => 1000000, 'required' => true, 'default' => '100', 'list' => true, 'help' => 'Soft limit for portal/reporting'],
             ['name' => 'max_call_duration', 'label' => 'Max call duration (s)', 'type' => 'int', 'min' => 0, 'max' => 604800, 'default' => '0', 'list' => true, 'help' => '0 = use Settings system default (Prepaid hard max). Or set seconds manually (e.g. 7200). SIP user override wins when both are set.'],
             ['name' => 'rate_cap', 'label' => 'CAP (max buy $/min)', 'type' => 'number', 'min' => 0, 'placeholder' => '0.005', 'list' => true, 'help' => 'Max buy rate this trunk may send. Destinations whose provider rate exceeds CAP are blocked (try next trunk / 403). Blank = no CAP.'],

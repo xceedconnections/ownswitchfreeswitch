@@ -333,7 +333,7 @@ final class DncController extends BaseController
         $this->svc()->rebuildGroupCache($id > 0 ? $id : null);
         $this->audit($r, 'dnc_rebuild_cache', 'dnc_groups', $id > 0 ? $id : null, null, null);
         $path = $id > 0 ? '/dnc/' . $id : '/dnc';
-        return $this->redirect($r, $path, 'DNC cache rebuilt (Redis + OpenSIPS).');
+        return $this->redirect($r, $path, 'DNC cache rebuilt (Redis + dialplan lookup).');
     }
 
     private function canWrite(Request $r): bool

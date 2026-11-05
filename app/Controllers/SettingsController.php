@@ -7,8 +7,6 @@ namespace Ownswitch\Controllers;
 use Ownswitch\App;
 use Ownswitch\Http\Request;
 use Ownswitch\Http\Response;
-use Ownswitch\Services\Routing\FailoverSipCodesSync;
-use Ownswitch\Services\Settings\DialogTimeoutSync;
 use Ownswitch\Services\Settings\SettingsService;
 
 final class SettingsController extends BaseController
@@ -98,25 +96,9 @@ final class SettingsController extends BaseController
         }
         $this->audit($r, 'settings_update', 'system_settings', null, array_intersect_key($before, $clean), $clean);
         $msg = 'Settings saved.';
-        if (array_key_exists('failover_sip_codes', $clean) || array_key_exists('failover_max_retries', $clean)) {
-            try {
-                $sync = (new FailoverSipCodesSync($this->db()))->sync();
-                if (!empty($sync['ok'])) {
-                    $msg .= ' Failover codes written to OpenSIPS cfg (' . ($sync['pattern'] ?? '') . '). Restart opensips to apply.';
-                }
-            } catch (\Throwable $e) {
-                $msg .= ' (failover sync skipped: ' . mb_substr($e->getMessage(), 0, 80) . ')';
-            }
-        }
-        if (array_key_exists('prepaid_hard_cap_seconds', $clean)) {
-            try {
-                $dlg = (new DialogTimeoutSync($this->db()))->sync();
-                if (!empty($dlg['ok'])) {
-                    $msg .= ' OpenSIPS dialog timeout set to ' . (int) ($dlg['seconds'] ?? 0) . 's (restart opensips to apply).';
-                }
-            } catch (\Throwable $e) {
-                $msg .= ' (dialog timeout sync skipped: ' . mb_substr($e->getMessage(), 0, 80) . ')';
-            }
+        if (array_key_exists('failover_sip_codes', $clean) || array_key_exists('failover_max_retries', $clean)
+            || array_key_exists('prepaid_hard_cap_seconds', $clean) || array_key_exists('kill_switch', $clean)) {
+            $msg .= ' FreeSWITCH dialplan reads these on the next call (no restart needed).';
         }
         return $this->redirect($r, '/settings', $msg);
     }
