@@ -37,8 +37,13 @@ final class EslClient
         }
         $this->write('auth ' . $this->password);
         $reply = $this->readFrame();
-        $text = trim((string) ($reply['Reply-Text'] ?? $reply['_body'] ?? ''));
-        if (!str_starts_with($text, '+OK')) {
+        // FreeSWITCH returns "+OK accepted" (sometimes without the leading '+', sometimes only in body).
+        $text = trim((string) ($reply['Reply-Text'] ?? ''));
+        if ($text === '') {
+            $text = trim((string) ($reply['_body'] ?? ''));
+        }
+        $text = ltrim(urldecode($text));
+        if (!preg_match('/^\+?OK\b/i', $text)) {
             throw new \RuntimeException(
                 'ESL authentication failed'
                 . ($text !== '' ? " ({$text})" : '')
