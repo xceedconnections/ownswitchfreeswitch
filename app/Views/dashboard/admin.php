@@ -140,6 +140,7 @@ if ($routeAttempts === 0) {
 
 <?php if (!empty($isStaff)):
     $moneyToday = $metrics['moneyToday'] ?? ['buy' => '0', 'sell' => '0', 'profit' => '0'];
+    $moneyWeek = $metrics['moneyWeek'] ?? ['buy' => '0', 'sell' => '0', 'profit' => '0'];
     $moneyMonth = $metrics['moneyMonth'] ?? ['buy' => '0', 'sell' => '0', 'profit' => '0'];
 ?>
 <div class="os-dash-grid os-dash-mid mb-3">
@@ -149,6 +150,14 @@ if ($routeAttempts === 0) {
             <div class="os-kpi os-kpi--amber"><div class="lbl">Buying</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyToday['buy'], 4)) ?></div><div class="sub">Carrier cost today</div></div>
             <div class="os-kpi os-kpi--green"><div class="lbl">Selling</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyToday['sell'], 4)) ?></div><div class="sub">Customer charge today</div></div>
             <div class="os-kpi os-kpi--teal"><div class="lbl">Profit</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyToday['profit'], 4)) ?></div><div class="sub">Selling − buying</div></div>
+        </div>
+    </div>
+    <div class="os-widget">
+        <div class="os-widget-h"><h2 class="os-widget-title">This week · buying, selling, profit</h2></div>
+        <div class="os-dash-grid" style="grid-template-columns:repeat(3,1fr);gap:.75rem">
+            <div class="os-kpi os-kpi--amber"><div class="lbl">Buying</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyWeek['buy'], 4)) ?></div><div class="sub">Carrier cost this week</div></div>
+            <div class="os-kpi os-kpi--green"><div class="lbl">Selling</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyWeek['sell'], 4)) ?></div><div class="sub">Customer charge this week</div></div>
+            <div class="os-kpi os-kpi--teal"><div class="lbl">Profit</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyWeek['profit'], 4)) ?></div><div class="sub">Selling − buying</div></div>
         </div>
     </div>
     <div class="os-widget">

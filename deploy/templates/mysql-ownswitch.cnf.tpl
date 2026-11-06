@@ -18,10 +18,21 @@ default-time-zone       = '+00:00'
 mysql_native_password   = @@MYSQL_NATIVE_PASSWORD_SWITCH@@
 
 # --- capacity ---
-max_connections         = 300
+# 2000-3000 live calls. Writes arrive at hangup rate, not one connection per call.
+# 500 covers the PHP pool plus admin sessions. The 8 GB buffer pool stays ~25% of a
+# 32 GB host so FreeSWITCH keeps the rest for RTP. A 1 GB redo log stops checkpoint
+# stalls when many CDRs commit together. Durability stays on (flush every commit).
+max_connections         = 500
 innodb_buffer_pool_size = @@MYSQL_BUFFER_POOL_MB@@M
+innodb_redo_log_capacity = 1G
 innodb_flush_log_at_trx_commit = 1
 sync_binlog             = 1
+innodb_flush_method     = O_DIRECT
+innodb_io_capacity      = 10000
+innodb_io_capacity_max  = 20000
+table_open_cache        = 8000
+tmp_table_size          = 64M
+max_heap_table_size     = 64M
 
 # --- binary log: kept 7 days for point-in-time recovery (see docs/BACKUP.md) ---
 binlog_expire_logs_seconds = 604800

@@ -168,8 +168,9 @@ init_config() {
   : "${OWNSWITCH_ADMIN_EMAIL:=admin@${OWNSWITCH_DOMAIN}}"
   : "${LETSENCRYPT_EMAIL:=}"
   : "${SIP_PORT:=5060}"
-  : "${RTP_PORT_MIN:=30000}"
-  : "${RTP_PORT_MAX:=40000}"
+  # 30000 UDP ports: a relayed call can use 4 (RTP+RTCP on each leg). 3000 calls need ~12000.
+  : "${RTP_PORT_MIN:=20000}"
+  : "${RTP_PORT_MAX:=50000}"
   : "${SIP_ALLOW_CIDRS:=}"      # comma separated; empty = any source may reach SIP
   : "${SSH_ALLOW_CIDRS:=}"      # comma separated; empty = any source may reach SSH
   : "${ADMIN_ALLOW_CIDRS:=}"    # reserved: restrict 80/443 (empty = public)

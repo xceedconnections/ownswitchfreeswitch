@@ -31,7 +31,7 @@ log_ok "PHP ${php_v} with required extensions"
 # 2. PHP-FPM pool
 # ---------------------------------------------------------------------------
 ram_mb="$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)"
-children=$(( ram_mb / 256 )); (( children >= 8 )) || children=8; (( children <= 64 )) || children=64
+children=$(( ram_mb / 256 )); (( children >= 8 )) || children=8; (( children <= 200 )) || children=200
 export PHP_FPM_MAX_CHILDREN="$children"
 export PHP_VERSION OWN_ETC OWN_VAR OWN_LOG OWN_OPT PHP_FPM_SOCK
 

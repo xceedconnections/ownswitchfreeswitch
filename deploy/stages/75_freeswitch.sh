@@ -162,6 +162,11 @@ sed -i -E 's|<!--\s*(<param name="rtp-start-port"[^>]*/>)\s*-->|\1|; s|<!--\s*(<
   "${conf}/autoload_configs/switch.conf.xml" 2>/dev/null || true
 set_var "${conf}/autoload_configs/switch.conf.xml" 'name="rtp-start-port" value="[0-9]+"' "name=\"rtp-start-port\" value=\"${RTP_PORT_MIN}\""
 set_var "${conf}/autoload_configs/switch.conf.xml" 'name="rtp-end-port" value="[0-9]+"'   "name=\"rtp-end-port\" value=\"${RTP_PORT_MAX}\""
+# 3000 concurrent calls are about 6000 channels (both legs) plus registrations.
+# 10000 sessions and 200 new sessions/second cover that ramp without an open flood gate.
+set_var "${conf}/autoload_configs/switch.conf.xml" 'name="max-sessions" value="[0-9]+"' "name=\"max-sessions\" value=\"10000\""
+set_var "${conf}/autoload_configs/switch.conf.xml" 'name="sessions-per-second" value="[0-9]+"' "name=\"sessions-per-second\" value=\"200\""
+set_var "${conf}/autoload_configs/switch.conf.xml" 'name="max-db-handles" value="[0-9]+"' "name=\"max-db-handles\" value=\"200\""
 set_var "${conf}/vars.xml" 'default_password=[^"]+' "default_password=$(ensure_secret freeswitch_default_password 32)"
 
 mods="${conf}/autoload_configs/modules.conf.xml"

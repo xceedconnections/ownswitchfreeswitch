@@ -32,6 +32,7 @@ final class DashboardMetricsService
             'routes' => [],
             'trunk_groups' => 0,
             'moneyToday' => ['buy' => '0', 'sell' => '0', 'profit' => '0'],
+            'moneyWeek' => ['buy' => '0', 'sell' => '0', 'profit' => '0'],
             'moneyMonth' => ['buy' => '0', 'sell' => '0', 'profit' => '0'],
         ];
     }
@@ -64,6 +65,7 @@ final class DashboardMetricsService
             $agg7 = $this->aggregate($tw, $tp, $since7);
             $since30 = gmdate('Y-m-d 00:00:00', strtotime('-29 days'));
             $monthStart = gmdate('Y-m-01 00:00:00');
+            $weekStart = gmdate('Y-m-d 00:00:00', time() - ((int) gmdate('N') - 1) * 86400);
 
             return [
                 'window60' => $window60,
@@ -79,6 +81,7 @@ final class DashboardMetricsService
                 'routes' => $this->routeHealth($scope),
                 'trunk_groups' => $this->trunkGroupCount($scope),
                 'moneyToday' => $this->money($tw, $tp, $todayStart),
+                'moneyWeek' => $this->money($tw, $tp, $weekStart),
                 'moneyMonth' => $this->money($tw, $tp, $monthStart),
             ];
         } catch (\Throwable $e) {

@@ -23,7 +23,8 @@ Restart=on-failure
 RestartSec=5
 StartLimitBurst=5
 StartLimitIntervalSec=60
-LimitNOFILE=100000
+# 10000 sessions, several descriptors each (SIP + RTP). 262144 leaves headroom.
+LimitNOFILE=262144
 LimitCORE=infinity
 # Must be large enough for SoftTimer / Sofia threads (240 bytes caused immediate SEGV).
 LimitSTACK=250000
