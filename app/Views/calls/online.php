@@ -6,7 +6,7 @@ $monitorExt = (string) ($monitorExt ?? '');
 <div class="os-page-head">
     <div>
         <h1 class="os-page-title">Calls Online <span class="os-count"><?= e((string) $count) ?></span></h1>
-        <p class="os-page-sub">Live dialogs · Trying / Ringing / Connected · auto-refresh 5s</p>
+        <p class="os-page-sub">Live dialogs · talk time starts when the call is answered · auto-refresh 5s</p>
     </div>
     <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/calls-online' . ($filterUser !== '' ? '?user=' . urlencode($filterUser) : ''))) ?>"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</a>
 </div>
@@ -71,7 +71,7 @@ $monitorExt = (string) ($monitorExt ?? '');
     <div class="os-empty"><div class="os-empty-title">No active calls</div><div>Trying, ringing (180/183) and connected dialogs appear here.</div></div>
 <?php else: ?>
     <div class="table-responsive"><table class="table table-sm mb-0 os-table os-rt-table">
-        <thead><tr><th>SIP</th><th>From</th><th>To</th><th>Status</th><th class="os-num">MM:SS</th><th>Call-ID</th><?php if ($canMonitor || !empty($canHangup)): ?><th></th><?php endif; ?></tr></thead>
+        <thead><tr><th>SIP</th><th>From</th><th>To</th><th>Status</th><th class="os-num">MM:SS</th><th>CallerID</th><?php if ($canMonitor || !empty($canHangup)): ?><th></th><?php endif; ?></tr></thead>
         <tbody>
         <?php foreach ($calls as $c):
             $sip = (string) ($c['sip_user'] ?? '');
@@ -84,7 +84,7 @@ $monitorExt = (string) ($monitorExt ?? '');
                 <td class="os-mono"><?= e($toDisp !== '' ? $toDisp : '—') ?></td>
                 <td><strong><?= e((string) ($c['state'] ?? '')) ?></strong></td>
                 <td class="os-num os-mono"><?= e(fmt_duration((int) ($c['duration'] ?? 0))) ?></td>
-                <td class="os-mono small text-muted"><?= e(mb_substr((string) ($c['callid'] ?? ''), 0, 40)) ?></td>
+                <td class="os-mono"><?php $cli = trim((string) ($c['caller_id'] ?? '')); echo e($cli !== '' ? $cli : '—'); ?></td>
                 <?php if ($canMonitor || !empty($canHangup)): ?>
                 <td class="text-end text-nowrap">
                     <?php if ($canMonitor):

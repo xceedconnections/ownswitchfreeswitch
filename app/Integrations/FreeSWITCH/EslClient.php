@@ -71,6 +71,15 @@ final class EslClient
         return trim($this->api('status'));
     }
 
+    /** Channel variables from uuid_dump (one round trip). */
+    public function uuidDump(string $uuid): string
+    {
+        if (!preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $uuid)) {
+            throw new \InvalidArgumentException('Not a FreeSWITCH channel UUID');
+        }
+        return $this->api('uuid_dump ' . $uuid);
+    }
+
     /** Send BYE both ways. $uuid is a FreeSWITCH channel UUID. */
     public function uuidKill(string $uuid): string
     {

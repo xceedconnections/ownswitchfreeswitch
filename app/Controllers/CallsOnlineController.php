@@ -255,12 +255,19 @@ final class CallsOnlineController extends BaseController
         if ($scope->isGlobal() || $scope->isStaff()) {
             return null;
         }
-        $cid = $scope->customerId;
-        if ($cid === null) {
+        if ($scope->customerId !== null) {
+            $st = $this->db()->prepare('SELECT username FROM sip_accounts WHERE customer_id = ?');
+            $st->execute([$scope->customerId]);
+        } elseif ($scope->resellerId !== null) {
+            $st = $this->db()->prepare(
+                'SELECT s.username FROM sip_accounts s
+                 INNER JOIN customers c ON c.id = s.customer_id
+                 WHERE c.reseller_id = ?'
+            );
+            $st->execute([$scope->resellerId]);
+        } else {
             return [];
         }
-        $st = $this->db()->prepare('SELECT username FROM sip_accounts WHERE customer_id = ?');
-        $st->execute([$cid]);
         return array_map(static fn ($u) => strtolower((string) $u), $st->fetchAll(\PDO::FETCH_COLUMN) ?: []);
     }
 
@@ -298,12 +305,18 @@ final class CallsOnlineController extends BaseController
         if ($start <= 0 && isset($d['start_time']) && is_string($d['start_time']) && strtotime($d['start_time']) !== false) {
             $start = (int) strtotime($d['start_time']);
         }
-        $dur = (int) ($d['duration'] ?? $d['calltime'] ?? $d['Duration'] ?? $d['lifetime'] ?? 0);
-        if ($dur <= 0 && $start > 0) {
-            $dur = $start > 1_000_000_000 ? max(0, time() - $start) : max(0, $start);
+        $age = $start > 1_000_000_000 ? max(0, time() - $start) : 0;
+        // talk_seconds is set by FreeSWITCH from answered_epoch. 0 while ringing is correct.
+        if (array_key_exists('talk_seconds', $d)) {
+            $dur = max(0, (int) $d['talk_seconds']);
+        } else {
+            $dur = (int) ($d['duration'] ?? $d['calltime'] ?? $d['Duration'] ?? $d['lifetime'] ?? 0);
+            if ($dur <= 0 && $age > 0) {
+                $dur = $age;
+            }
         }
         [$bucket, $stateLabel] = self::classifyState($stateRaw, $dur);
-        $color = self::vicidialColor($bucket, $dur);
+        $color = self::vicidialColor($bucket, $bucket === 'connected' ? $dur : $age);
         $fromUser = self::userPart($from);
         $toUser = self::userPart($to);
         if ($sipUser === '') {
@@ -323,6 +336,7 @@ final class CallsOnlineController extends BaseController
             'bucket' => $bucket,
             'color' => $color,
             'duration' => $dur,
+            'caller_id' => trim((string) ($d['caller_id'] ?? '')),
             'callid' => $callid,
             'from_tag' => $fromTag,
             'dialog' => $dlg,

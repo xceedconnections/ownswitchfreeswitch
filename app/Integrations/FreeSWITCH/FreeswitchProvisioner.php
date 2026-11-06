@@ -340,45 +340,107 @@ final class FreeswitchProvisioner
     public function listDialogs(): array
     {
         $out = [];
+        $esl = $this->esl();
         try {
-            $rows = $this->esl()->channels();
+            $rows = $esl->channels();
+            foreach ($rows as $row) {
+                $uuid = (string) ($row['uuid'] ?? '');
+                if ($uuid === '' || strtolower((string) ($row['direction'] ?? '')) === 'outbound') {
+                    continue;
+                }
+                $dump = [];
+                try {
+                    $dump = self::parseUuidDump($esl->uuidDump($uuid));
+                } catch (\Throwable) {
+                    $dump = [];
+                }
+                $callstate = strtoupper((string) ($row['callstate'] ?? ''));
+                $state = match (true) {
+                    str_contains($callstate, 'RING'), str_contains($callstate, 'EARLY') => 'EARLY',
+                    str_contains($callstate, 'ACTIVE'), str_contains($callstate, 'HELD') => 'CONFIRMED',
+                    default => 'EARLY',
+                };
+                $presence = (string) ($row['presence_id'] ?? '');
+                $sipUser = trim((string) ($dump['variable_os_sip_user'] ?? ''));
+                if ($sipUser === '') {
+                    $sipUser = trim(explode('@', $presence, 2)[0] ?? '');
+                }
+                $cidNum = trim((string) ($dump['variable_sip_from_user'] ?? $dump['Caller-Caller-ID-Number'] ?? $row['cid_num'] ?? $row['initial_cid_num'] ?? ''));
+                $cidName = trim((string) ($dump['Caller-Caller-ID-Name'] ?? $row['cid_name'] ?? $row['initial_cid_name'] ?? ''));
+                if ($sipUser === '') {
+                    $sipUser = $cidNum;
+                }
+                $dest = (string) ($row['dest'] ?? $row['callee_num'] ?? '');
+                $ip = (string) ($row['ip_addr'] ?? '');
+                $start = (int) ($row['created_epoch'] ?? 0);
+                $answered = (int) ($dump['variable_answered_epoch'] ?? 0);
+                if ($answered <= 0) {
+                    $us = (int) ($dump['Caller-Channel-Answered-Time'] ?? 0);
+                    if ($us > 1_000_000_000_000_000) {
+                        $answered = intdiv($us, 1_000_000);
+                    }
+                }
+                $talk = $answered > 1_000_000_000 ? max(0, time() - $answered) : 0;
+                $out[] = [
+                    'uuid' => $uuid,
+                    'callid' => (string) ($row['call_uuid'] ?? $uuid),
+                    'from_uri' => $cidNum !== '' ? $cidNum : $sipUser,
+                    'to_uri' => $dest,
+                    'state' => $state,
+                    'start_time' => $start,
+                    'talk_seconds' => $talk,
+                    'duration' => $talk,
+                    'os_src' => $sipUser,
+                    'os_dst' => $dest,
+                    'caller_id' => self::callerIdNumber($cidNum, $cidName, $sipUser),
+                    'caller_contact' => $ip,
+                    'from_tag' => '',
+                ];
+            }
         } catch (\Throwable $e) {
             throw new \RuntimeException('FreeSWITCH ESL: ' . $e->getMessage(), 0, $e);
-        }
-        foreach ($rows as $row) {
-            $uuid = (string) ($row['uuid'] ?? '');
-            if ($uuid === '' || strtolower((string) ($row['direction'] ?? '')) === 'outbound') {
-                continue;
-            }
-            $callstate = strtoupper((string) ($row['callstate'] ?? ''));
-            $state = match (true) {
-                str_contains($callstate, 'RING'), str_contains($callstate, 'EARLY') => 'EARLY',
-                str_contains($callstate, 'ACTIVE'), str_contains($callstate, 'HELD') => 'CONFIRMED',
-                default => 'EARLY',
-            };
-            $presence = (string) ($row['presence_id'] ?? '');
-            $sipUser = trim(explode('@', $presence, 2)[0] ?? '');
-            if ($sipUser === '') {
-                $sipUser = (string) ($row['cid_num'] ?? '');
-            }
-            $dest = (string) ($row['dest'] ?? $row['callee_num'] ?? '');
-            $ip = (string) ($row['ip_addr'] ?? '');
-            $start = (int) ($row['created_epoch'] ?? 0);
-            $out[] = [
-                'uuid' => $uuid,
-                'callid' => (string) ($row['call_uuid'] ?? $uuid),
-                'from_uri' => $sipUser !== '' ? $sipUser : (string) ($row['cid_num'] ?? ''),
-                'to_uri' => $dest,
-                'state' => $state,
-                'start_time' => $start,
-                'duration' => $start > 0 ? max(0, time() - $start) : 0,
-                'os_src' => $sipUser,
-                'os_dst' => $dest,
-                'caller_contact' => $ip,
-                'from_tag' => '',
-            ];
+        } finally {
+            $esl->close();
         }
         return $out;
+    }
+
+    /** @return array<string,string> */
+    private static function parseUuidDump(string $raw): array
+    {
+        $out = [];
+        foreach (preg_split('/\r?\n/', $raw) ?: [] as $line) {
+            if (!str_contains($line, ':')) {
+                continue;
+            }
+            [$k, $v] = explode(':', $line, 2);
+            $k = trim($k);
+            if ($k !== '') {
+                $out[$k] = trim($v);
+            }
+        }
+        return $out;
+    }
+
+    /** Phone-like caller ID. Skips the SIP username and a display name when a real number exists. */
+    private static function callerIdNumber(string $number, string $name, string $sipUser): string
+    {
+        $num = self::phoneDigits($number);
+        if ($num !== '' && strcasecmp($number, $sipUser) !== 0) {
+            return $num;
+        }
+        $fromName = self::phoneDigits($name);
+        if ($fromName !== '' && $fromName !== $num) {
+            return $fromName;
+        }
+        return $num;
+    }
+
+    private static function phoneDigits(string $raw): string
+    {
+        $d = preg_replace('/\D+/', '', $raw) ?? '';
+        $len = strlen($d);
+        return ($len >= 6 && $len <= 18) ? $d : '';
     }
 
     /**
