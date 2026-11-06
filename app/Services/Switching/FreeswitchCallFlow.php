@@ -898,12 +898,23 @@ final class FreeswitchCallFlow
 
     private function extension(string $name, string $expr, string $actions): string
     {
-        return '<?xml version="1.0" encoding="UTF-8"?>'
-            . '<document type="freeswitch/xml"><section name="dialplan"><context name="ownswitch">'
-            . '<extension name="' . $this->x($name) . '">'
-            . '<condition field="destination_number" expression="' . $expr . '">'
-            . $actions
-            . '</condition></extension></context></section></document>';
+        // mod_xml_curl's switch_xml_parse_str rejects a one-line dialplan ("Error Parsing
+        // Result" → "Context ownswitch not found" → phone hears not found). Same fix as
+        // the directory document: short lines, standalone="no".
+        $body = preg_replace('/>\s*</', ">\n          <", $actions) ?? $actions;
+
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
+            . "<document type=\"freeswitch/xml\">\n"
+            . "  <section name=\"dialplan\">\n"
+            . "    <context name=\"ownswitch\">\n"
+            . "      <extension name=\"" . $this->x($name) . "\">\n"
+            . "        <condition field=\"destination_number\" expression=\"" . $this->x($expr) . "\">\n"
+            . "          " . $body . "\n"
+            . "        </condition>\n"
+            . "      </extension>\n"
+            . "    </context>\n"
+            . "  </section>\n"
+            . "</document>\n";
     }
 
     private function x(string $s): string
