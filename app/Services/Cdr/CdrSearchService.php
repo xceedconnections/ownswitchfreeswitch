@@ -132,6 +132,11 @@ final class CdrSearchService
             }
         }
         unset($r);
+        $recByCdr = $this->recordingIds(array_map(static fn ($row) => (int) ($row['id'] ?? 0), $rows));
+        foreach ($rows as &$r) {
+            $r['recording_id'] = $recByCdr[(int) $r['id']] ?? null;
+        }
+        unset($r);
 
         // Customers must never see carrier-side cost/margin.
         if (!$scope->isStaff()) {
@@ -170,12 +175,40 @@ final class CdrSearchService
         if ($row['area_description'] === null && ($dn !== '' || $rawDn !== '')) {
             $row['area_description'] = $this->areaNameOne($dn !== '' ? $dn : $rawDn);
         }
+        $rec = $this->recordingIds([(int) $row['id']]);
+        $row['recording_id'] = $rec[(int) $row['id']] ?? null;
         if (!$scope->isStaff()) {
             foreach (['carrier_cost', 'carrier_rate', 'carrier_connect_fee', 'gross_margin', 'carrier_id', 'carrier_name', 'carrier_trunk_id', 'carrier_initial', 'carrier_subsequent', 'duration_billable_carrier', 'cgrates_cost', 'rating_discrepancy', 'trunk_name'] as $k) {
                 unset($row[$k]);
             }
         }
         return $row;
+    }
+
+    /**
+     * @param list<int> $cdrIds
+     * @return array<int,int> cdr id => recording id
+     */
+    private function recordingIds(array $cdrIds): array
+    {
+        $cdrIds = array_values(array_unique(array_filter(array_map('intval', $cdrIds), static fn ($i) => $i > 0)));
+        if ($cdrIds === []) {
+            return [];
+        }
+        try {
+            $ph = implode(',', array_fill(0, count($cdrIds), '?'));
+            $st = $this->pdo->prepare(
+                "SELECT cdr_id, id FROM recordings WHERE status = 'available' AND cdr_id IN ({$ph})"
+            );
+            $st->execute($cdrIds);
+            $out = [];
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+                $out[(int) $row['cdr_id']] = (int) $row['id'];
+            }
+            return $out;
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     /** @param list<string> $destinations @return array<string,string> */

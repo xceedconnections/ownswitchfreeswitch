@@ -1,4 +1,8 @@
-<?php /** @var array $result */ $query = $_GET ?? []; ?>
+<?php
+/** @var array $result @var bool $canDelete @var array $query */
+$canDelete = !empty($canDelete);
+$query = $query ?? [];
+?>
 <div class="os-page-head">
     <div>
         <h1 class="os-page-title">Recordings <span class="os-count"><?= e($result['total']) ?></span></h1>
@@ -11,15 +15,34 @@
         <div>Set the SIP user media policy to <strong>Record</strong>. The file appears here after the call ends. Access is audited.</div></div>
 <?php else: ?>
     <div class="table-responsive"><table class="table table-sm table-hover mb-0 os-table">
-        <thead><tr><th>ID</th><th>Created (UTC)</th><th>CDR</th><th class="os-num">Duration (s)</th><th class="os-num">Size</th><th>Status</th><th></th></tr></thead>
+        <thead><tr>
+            <th>ID</th><th>Created (UTC)</th><th>SIP user</th><th>CallerID</th><th>Called number</th><th>CDR</th>
+            <th class="os-num">Duration</th><th class="os-num">Size</th><th>Status</th><th></th>
+        </tr></thead>
         <tbody><?php foreach ($result['rows'] as $r): ?>
-            <tr><td class="os-mono"><?= e($r['id']) ?></td><td class="os-mono"><?= e(substr((string) $r['created_at'], 0, 19)) ?></td>
-                <td><?php if ($r['cdr_id']): ?><a href="<?= e(url('/cdrs/' . (int) $r['cdr_id'])) ?>" class="os-mono"><?= e($r['cdr_id']) ?></a><?php else: ?>-<?php endif; ?></td>
-                <td class="os-num"><?= e($r['duration_sec']) ?></td><td class="os-num"><?= e(number_format((int) $r['size_bytes'] / 1024, 1)) ?> KB</td>
+            <tr>
+                <td class="os-mono"><?= e($r['id']) ?></td>
+                <td class="os-mono"><?= e(substr((string) $r['created_at'], 0, 19)) ?></td>
+                <td class="os-mono"><?= e((string) ($r['sip_username'] ?? '') !== '' ? $r['sip_username'] : '—') ?></td>
+                <td class="os-mono"><?= e((string) ($r['src'] ?? '') !== '' ? $r['src'] : '—') ?></td>
+                <td class="os-mono"><?= e((string) ($r['dst_normalized'] ?? '') !== '' ? $r['dst_normalized'] : '—') ?></td>
+                <td><?php if ($r['cdr_id']): ?><a href="<?= e(url('/cdrs/' . (int) $r['cdr_id'])) ?>" class="os-mono"><?= e($r['cdr_id']) ?></a><?php else: ?>—<?php endif; ?></td>
+                <td class="os-num os-mono"><?= e(fmt_duration($r['duration_sec'] ?? 0)) ?></td>
+                <td class="os-num"><?= e(number_format((int) $r['size_bytes'] / 1024, 1)) ?> KB</td>
                 <td><span class="badge text-bg-<?= $r['status'] === 'available' ? 'success' : 'secondary' ?>"><?= e($r['status']) ?></span></td>
-                <td class="text-end"><?php if ($r['status'] === 'available'): ?>
-                    <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/recordings/' . (int) $r['id'] . '/play')) ?>">Play</a>
-                    <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/recordings/' . (int) $r['id'] . '/play?download=1')) ?>">Download</a><?php endif; ?></td></tr>
+                <td class="text-end text-nowrap">
+                    <?php if ($r['status'] === 'available'): ?>
+                        <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/recordings/' . (int) $r['id'] . '/play')) ?>" title="Play"><i class="bi bi-play-circle"></i></a>
+                        <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/recordings/' . (int) $r['id'] . '/play?download=1')) ?>">Download</a>
+                    <?php endif; ?>
+                    <?php if ($canDelete): ?>
+                        <form method="post" action="<?= e(url('/recordings/' . (int) $r['id'] . '/delete')) ?>" class="d-inline" data-confirm="Delete this recording and its file?">
+                            <?= csrf_field() ?>
+                            <button type="submit" class="btn btn-outline-danger btn-sm" data-once>Delete</button>
+                        </form>
+                    <?php endif; ?>
+                </td>
+            </tr>
         <?php endforeach; ?></tbody>
     </table></div>
     <?php include __DIR__ . '/../partials/pagination.php'; ?>

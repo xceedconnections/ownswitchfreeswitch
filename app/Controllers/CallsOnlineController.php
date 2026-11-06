@@ -44,6 +44,10 @@ final class CallsOnlineController extends BaseController
             } catch (\Throwable) {
             }
         }
+        $refresh = (int) $r->query('refresh', 4);
+        if (!in_array($refresh, [4, 10, 15, 30], true)) {
+            $refresh = 4;
+        }
         $role = (string) ($this->user($r)['role'] ?? '');
         $canMonitor = in_array($role, ['super_admin', 'admin'], true);
         $monitorExt = '';
@@ -64,6 +68,7 @@ final class CallsOnlineController extends BaseController
             'canHangup' => true,
             'canMonitor' => $canMonitor,
             'monitorExt' => $monitorExt,
+            'refresh' => $refresh,
         ]);
     }
 

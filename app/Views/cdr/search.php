@@ -93,11 +93,16 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
                 <?php endif; ?>
                 <td><a href="<?= e(url('/cdrs/' . (int) $c['id'])) ?>" class="os-mono"><?= e($c['id']) ?></a><?= !empty($c['is_demo']) ? ' <span class="badge text-bg-warning">DEMO</span>' : '' ?></td>
                 <td>
+                    <?php if (!empty($c['recording_id'])): ?>
+                        <a href="<?= e(url('/recordings/' . (int) $c['recording_id'] . '/play')) ?>" class="text-decoration-none me-1" title="Play recording">
+                            <i class="bi bi-play-circle"></i>
+                        </a>
+                    <?php endif; ?>
                     <?php if (!empty($c['has_sip_trace'])): ?>
                         <a href="<?= e(url('/cdrs/' . (int) $c['id'])) ?>#sip-trace" class="text-decoration-none" title="SIP trace">
                             <i class="bi bi-diagram-3"></i>
                         </a>
-                    <?php else: ?>
+                    <?php elseif (empty($c['recording_id'])): ?>
                         <span class="text-muted">—</span>
                     <?php endif; ?>
                 </td>

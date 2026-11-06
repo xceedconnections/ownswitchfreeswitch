@@ -83,7 +83,12 @@ if ($showCost) {
         <h1 class="os-page-title">CDR #<?= e($cdr['id']) ?><?= !empty($cdr['is_demo']) ? ' <span class="badge text-bg-warning">DEMO</span>' : '' ?></h1>
         <p class="os-page-sub">Full call detail record</p>
     </div>
-    <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/cdrs')) ?>"><i class="bi bi-arrow-left me-1"></i>Back</a>
+    <div class="d-flex gap-2">
+        <?php if (!empty($cdr['recording_id'])): ?>
+            <a class="btn btn-outline-primary btn-sm" href="<?= e(url('/recordings/' . (int) $cdr['recording_id'] . '/play')) ?>"><i class="bi bi-play-circle me-1"></i>Play</a>
+        <?php endif; ?>
+        <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/cdrs')) ?>"><i class="bi bi-arrow-left me-1"></i>Back</a>
+    </div>
 </div>
 <div class="os-panel col-12 overflow-hidden"><table class="table table-sm mb-0 os-table">
     <?php foreach ($rows as $k => $v): ?>

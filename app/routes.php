@@ -267,6 +267,7 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $recRoles = $role(['super_admin', 'admin', 'reseller', 'customer_owner']);
     $r->get('/recordings', [$rec, 'index'], [$recRoles]);
     $r->get('/recordings/{id}/play', [$rec, 'play'], [$recRoles]);
+    $r->post('/recordings/{id}/delete', [$rec, 'delete'], [$STAFF]);
     $fraud = new FraudController();
     $r->get('/fraud', [$fraud, 'index'], [$role(Menu::RESELLER_UP)]);
     $r->post('/fraud/scan', [$fraud, 'scan'], [$STAFF]);

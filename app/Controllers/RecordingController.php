@@ -18,8 +18,33 @@ final class RecordingController extends BaseController
         } catch (\Throwable $e) {
             error_log('[ownswitch] recordings sync: ' . $e->getMessage());
         }
-        $res = $svc->repo()->paginate($this->scope($r), [], (int) $r->query('page', 1), 25);
-        return $this->view('recordings/index', ['title' => 'Recordings', 'result' => $res]);
+        $res = $svc->listFor($this->scope($r), (int) $r->query('page', 1), 25);
+        return $this->view('recordings/index', [
+            'title' => 'Recordings',
+            'result' => $res,
+            'canDelete' => $this->scope($r)->isStaff(),
+            'query' => $r->query,
+        ]);
+    }
+
+    /** Admin: delete the recording row and the wav file. */
+    public function delete(Request $r, array $p): Response
+    {
+        if (!$this->scope($r)->isStaff()) {
+            return $this->forbidden();
+        }
+        $id = (int) ($p['id'] ?? 0);
+        $svc = new RecordingService($this->db());
+        $ok = $svc->delete($id, $this->scope($r));
+        if ($ok) {
+            $this->audit($r, 'recording_delete', 'recordings', $id, null, null);
+        }
+        return $this->redirect(
+            $r,
+            '/recordings',
+            $ok ? 'Recording deleted.' : 'Recording was not deleted.',
+            $ok ? 'success' : 'danger'
+        );
     }
 
     /** GET /recordings/{id}/play?download=1 : tenant check, path confinement, access log, then stream. */

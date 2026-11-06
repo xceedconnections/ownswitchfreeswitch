@@ -54,6 +54,56 @@ final class RecordingService
         return str_starts_with($real, $baseWithSep) ? $real : null;
     }
 
+    /**
+     * @return array{rows:list<array<string,mixed>>,total:int,page:int,perPage:int,pages:int}
+     */
+    public function listFor(TenantScope $scope, int $page = 1, int $perPage = 25): array
+    {
+        $page = max(1, $page);
+        $perPage = min(100, max(1, $perPage));
+        [$tw, $tp] = $scope->where('owned', 'r');
+        $where = "({$tw})";
+        $cnt = $this->pdo->prepare("SELECT COUNT(*) FROM recordings r WHERE {$where}");
+        $cnt->execute($tp);
+        $total = (int) $cnt->fetchColumn();
+        $sql = "SELECT r.*, c.src, c.dst_normalized, sa.username AS sip_username
+                FROM recordings r
+                LEFT JOIN cdrs c ON c.id = r.cdr_id
+                LEFT JOIN sip_accounts sa ON sa.id = c.sip_account_id
+                WHERE {$where}
+                ORDER BY r.id DESC
+                LIMIT {$perPage} OFFSET " . (($page - 1) * $perPage);
+        $st = $this->pdo->prepare($sql);
+        $st->execute($tp);
+        $pages = max(1, (int) ceil($total / $perPage));
+        return [
+            'rows' => $st->fetchAll(PDO::FETCH_ASSOC) ?: [],
+            'total' => $total,
+            'page' => $page,
+            'perPage' => $perPage,
+            'pages' => $pages,
+        ];
+    }
+
+    /** Remove the database row and the wav. Returns false when the row is outside this tenant. */
+    public function delete(int $id, TenantScope $scope): bool
+    {
+        $row = $this->findAuthorized($id, $scope);
+        if ($row === null) {
+            return false;
+        }
+        $abs = $this->resolvePath((string) ($row['file_path'] ?? ''));
+        if ($abs !== null && is_file($abs)) {
+            @unlink($abs);
+        }
+        $cdrId = (int) ($row['cdr_id'] ?? 0);
+        $this->pdo->prepare('DELETE FROM recordings WHERE id = ?')->execute([$id]);
+        if ($cdrId > 0) {
+            $this->pdo->prepare("UPDATE cdrs SET recording_status = 'deleted' WHERE id = ?")->execute([$cdrId]);
+        }
+        return true;
+    }
+
     public function logAccess(int $recordingId, int $userId, string $action, string $ip): void
     {
         $this->pdo->prepare('INSERT INTO recording_access_logs (recording_id, user_id, action, ip) VALUES (?,?,?,?)')

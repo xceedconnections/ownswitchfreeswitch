@@ -1,14 +1,24 @@
 <?php
-/** @var list<array> $calls @var ?string $error @var int $count @var array $stats @var array $users @var string $filterUser @var bool $canHangup @var bool $canMonitor @var string $monitorExt */
+/** @var list<array> $calls @var ?string $error @var int $count @var array $stats @var array $users @var string $filterUser @var bool $canHangup @var bool $canMonitor @var string $monitorExt @var int $refresh */
+$refresh = in_array((int) ($refresh ?? 4), [4, 10, 15, 30], true) ? (int) $refresh : 4;
 $canMonitor = !empty($canMonitor);
 $monitorExt = (string) ($monitorExt ?? '');
 ?>
 <div class="os-page-head">
     <div>
         <h1 class="os-page-title">Calls Online <span class="os-count"><?= e((string) $count) ?></span></h1>
-        <p class="os-page-sub">Live dialogs · talk time starts when the call is answered · auto-refresh 5s</p>
+        <p class="os-page-sub">Live dialogs · talk time starts when the call is answered · auto-refresh <?= e((string) $refresh) ?>s</p>
     </div>
-    <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/calls-online' . ($filterUser !== '' ? '?user=' . urlencode($filterUser) : ''))) ?>"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</a>
+    <form method="get" action="<?= e(url('/calls-online')) ?>" class="d-flex gap-2 align-items-center">
+        <?php if ($filterUser !== ''): ?><input type="hidden" name="user" value="<?= e($filterUser) ?>"><?php endif; ?>
+        <label class="small text-muted mb-0" for="refresh">Refresh</label>
+        <select class="form-select form-select-sm" id="refresh" name="refresh" style="width:7rem" onchange="this.form.submit()">
+            <?php foreach ([4, 10, 15, 30] as $sec): ?>
+                <option value="<?= e((string) $sec) ?>"<?= $refresh === $sec ? ' selected' : '' ?>><?= e((string) $sec) ?> sec</option>
+            <?php endforeach; ?>
+        </select>
+        <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/calls-online' . '?' . http_build_query(array_filter(['user' => $filterUser, 'refresh' => (string) $refresh])))) ?>"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</a>
+    </form>
 </div>
 
 <?php if ($canMonitor): ?>
@@ -38,6 +48,7 @@ $monitorExt = (string) ($monitorExt ?? '');
 
 <?php if ($users !== []): ?>
 <form method="get" action="<?= e(url('/calls-online')) ?>" class="os-toolbar mb-3">
+    <input type="hidden" name="refresh" value="<?= e((string) $refresh) ?>">
     <div class="row g-2 align-items-end">
         <div class="col-md-4">
             <label class="form-label small mb-0" for="user">Filter user / SIP</label>
@@ -50,7 +61,7 @@ $monitorExt = (string) ($monitorExt ?? '');
         </div>
         <div class="col-auto"><button class="btn btn-primary btn-sm" type="submit">Submit</button></div>
         <?php if ($filterUser !== ''): ?>
-            <div class="col-auto"><a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/calls-online')) ?>">Clear</a></div>
+            <div class="col-auto"><a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/calls-online?refresh=' . $refresh)) ?>">Clear</a></div>
         <?php endif; ?>
     </div>
 </form>
@@ -117,12 +128,15 @@ $monitorExt = (string) ($monitorExt ?? '');
 <?php endif; ?>
 </div>
 <?php
-$refreshUrl = url('/calls-online' . ($filterUser !== '' ? '?user=' . rawurlencode($filterUser) : ''));
+$refreshUrl = url('/calls-online?' . http_build_query(array_filter([
+    'user' => $filterUser,
+    'refresh' => (string) $refresh,
+])));
 ?>
 <script>
 (function () {
   var url = <?= json_encode($refreshUrl, JSON_THROW_ON_ERROR) ?>;
-  var timer = window.setTimeout(function () { window.location.href = url; }, 5000);
+  var timer = window.setTimeout(function () { window.location.href = url; }, <?= (int) $refresh * 1000 ?>);
   document.querySelectorAll('form[data-os-hangup]').forEach(function (f) {
     f.addEventListener('submit', function () { window.clearTimeout(timer); });
   });

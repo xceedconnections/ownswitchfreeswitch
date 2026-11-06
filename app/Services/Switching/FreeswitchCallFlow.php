@@ -271,6 +271,10 @@ final class FreeswitchCallFlow
         if ($sipCode <= 0 && preg_match('/sip:(\d{3})/', (string) ($vars['proto_specific_hangup_cause'] ?? ''), $cm)) {
             $sipCode = (int) $cm[1];
         }
+        // An answered call was SIP 200. Caller hangup often leaves sip_term_status empty.
+        if ($sipCode <= 0 && $bill > 0) {
+            $sipCode = 200;
+        }
         $mediaPol = strtolower(trim((string) ($vars['os_media_policy'] ?? '')));
         if (!in_array($mediaPol, MediaPolicy::CHOICES, true)) {
             $mediaPol = '';
