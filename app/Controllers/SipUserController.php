@@ -172,7 +172,7 @@ final class SipUserController extends CrudController
                 'label' => 'CallerID number',
                 'max' => 32,
                 'pattern' => '/^\+?[0-9]{3,30}$/',
-                'help' => 'Leave blank for passthrough (ViciDial / softphone From goes out). Used when mode = Fixed. Trunk From user still wins if set.',
+                'help' => 'Used when mode is Portal forced. This number is sent as the caller ID on every call. Trunk From user still wins if set.',
                 'section' => 'CLI and dial format',
             ],
             [
@@ -181,7 +181,7 @@ final class SipUserController extends CrudController
                 'type' => 'select',
                 'options' => SipPeerOptions::CALLER_ID_MODE,
                 'default' => 'passthrough',
-                'help' => 'Passthrough = whatever ViciDial/Eyebeam sends. Fixed = portal CallerID number. Display Name = softphone Display Name as CLI (digits). RPID = take the CLI from the Remote-Party-ID header. PAI = take the CLI from the P-Asserted-Identity header.',
+                'help' => 'ViciDial / softphone uses the caller ID number (From user), not the display name. Display name uses the digits in the From display field. Portal forced sends the CallerID number saved on this SIP user. RPID and PAI read those headers.',
                 'section' => 'CLI and dial format',
             ],
             [

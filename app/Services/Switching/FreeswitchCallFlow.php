@@ -114,6 +114,7 @@ final class FreeswitchCallFlow
 
         $bridges = [];
         $primaryTrunk = null;
+        $chosenCid = '';
         foreach ($trunks as $t) {
             $cidNum = $this->outboundCallerId($account, $t, $inboundCid, $dest);
             if ($this->callerIdLengthReject($account, $t, $cidNum)) {
@@ -121,6 +122,7 @@ final class FreeswitchCallFlow
             }
             if ($primaryTrunk === null) {
                 $primaryTrunk = $t;
+                $chosenCid = $cidNum;
             }
             $bridges[] = $this->bridgeLeg($account, $t, $dest, $userFmt, $cidNum);
         }
@@ -184,6 +186,7 @@ final class FreeswitchCallFlow
             . '<action application="set" data="continue_on_fail=' . $this->x($failCodes) . '"/>'
             . '<action application="set" data="fail_on_single_reject=false"/>'
             . '<action application="set" data="os_sip_user=' . $this->x($userName) . '"/>'
+            . '<action application="set" data="os_cli=' . $this->x($chosenCid) . '"/>'
             . '<action application="set" data="os_direction=outbound"/>'
             . '<action application="set" data="os_media_policy=' . $this->x($media) . '"/>'
             . ($primaryTrunk !== null
@@ -655,47 +658,36 @@ final class FreeswitchCallFlow
     }
 
     /**
-     * CLI shown on the CDR. Softphones often put the dialled caller ID in the From display
-     * name ("12138007000" <sip:owner@domain>) while caller_id_number is only the SIP username.
+     * CLI stored on the CDR. os_cli is the number the dialplan already chose:
+     * display mode uses the From display name, portal forced uses the SIP user
+     * CallerID number, and every other mode uses the caller ID number (From user).
      *
      * @param array<string,string> $vars
      */
     private function presentedCli(array $vars): string
     {
+        $stamped = $this->digitsOnly(trim((string) ($vars['os_cli'] ?? '')));
+        if ($stamped !== '') {
+            return $stamped;
+        }
         $candidates = [];
-        foreach (['sip_from_display', 'caller_id_name'] as $k) {
+        foreach (['caller_id_number', 'sip_from_user_stripped', 'sip_from_user', 'effective_caller_id_number', 'origination_caller_id_number'] as $k) {
             $v = trim((string) ($vars[$k] ?? ''));
             if ($v !== '') {
                 $candidates[] = $v;
             }
         }
         $full = trim((string) ($vars['sip_full_from'] ?? ''));
-        if (preg_match('/^\s*"([^"]+)"/', $full, $m) === 1) {
+        if (preg_match('/<sip:([^@>;\s]+)/i', $full, $m) === 1) {
             $candidates[] = $m[1];
         }
-        foreach (['sip_h_Remote-Party-ID', 'sip_h_P-Asserted-Identity', 'sip_remote_party_id', 'sip_p_asserted_identity'] as $k) {
-            $v = trim((string) ($vars[$k] ?? ''));
-            if ($v !== '') {
-                $candidates[] = $v;
-            }
-        }
-        foreach (['effective_caller_id_number', 'origination_caller_id_number', 'caller_id_number', 'sip_from_user_stripped', 'sip_from_user'] as $k) {
-            $v = trim((string) ($vars[$k] ?? ''));
-            if ($v !== '') {
-                $candidates[] = $v;
-            }
-        }
-        $fallback = '';
         foreach ($candidates as $c) {
-            if ($fallback === '') {
-                $fallback = $c;
-            }
             $digits = $this->digitsOnly($c);
             if (strlen(ltrim($digits, '+')) >= 6) {
                 return $digits;
             }
         }
-        return $fallback;
+        return '';
     }
 
     /** @return array{number:string,name:string,rpid:string,pai:string} */

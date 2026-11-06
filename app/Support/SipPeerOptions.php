@@ -25,9 +25,9 @@ final class SipPeerOptions
     ];
 
     public const CALLER_ID_MODE = [
-        'passthrough' => 'Passthrough (ViciDial / softphone From)',
-        'fixed' => 'Fixed portal CallerID',
-        'display_name' => 'Softphone Display Name as CallerID',
+        'passthrough' => 'ViciDial / softphone (caller ID number)',
+        'fixed' => 'Portal forced (SIP user CallerID number)',
+        'display_name' => 'Display name',
         'rpid' => 'Remote-Party-ID header (RPID)',
         'pai' => 'P-Asserted-Identity header (PAI)',
     ];
