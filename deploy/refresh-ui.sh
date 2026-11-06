@@ -277,8 +277,10 @@ if [[ "$AUTH_PARAM_ADDED" == "1" ]]; then
 fi
 
 # FreeSWITCH must be able to create wavs; the portal group must be able to read them.
+# Parent is not listable by other users; execute lets freeswitch reach this folder by path.
 REC_DIR="${RECORDINGS_DIR:-/var/lib/ownswitch/recordings}"
 if getent passwd freeswitch >/dev/null 2>&1; then
+  chmod 751 "$(dirname "$REC_DIR")" 2>/dev/null || true
   install -d -m 2770 -o freeswitch -g ownswitch "$REC_DIR" 2>/dev/null || true
   chown freeswitch:ownswitch "$REC_DIR" 2>/dev/null || true
   chmod 2770 "$REC_DIR" 2>/dev/null || true
