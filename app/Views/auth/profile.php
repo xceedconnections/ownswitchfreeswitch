@@ -1,10 +1,11 @@
 <?php
-/** @var array $user @var string $timezone @var array<string,string> $options @var list<string> $errors */
+/** @var array $user @var string $timezone @var string $effective @var array<string,string> $options @var list<string> $errors */
+$effective = $effective ?? $timezone;
 ?>
 <div class="os-page-head">
     <div>
         <h1 class="os-page-title">My profile</h1>
-        <p class="os-page-sub">Timezone controls how CDR times and report date ranges appear for your account</p>
+        <p class="os-page-sub">Times, dashboard today / week / month, and report dates use <?= e(\Ownswitch\Support\Timezone::label($effective)) ?></p>
     </div>
 </div>
 
@@ -35,21 +36,25 @@
             <form method="post" action="<?= e(url('/account/profile')) ?>">
                 <?= csrf_field() ?>
                 <div class="mb-3">
-                    <label class="form-label" for="timezone">Display timezone</label>
+                    <label class="form-label" for="timezone">Timezone</label>
                     <select class="form-select" id="timezone" name="timezone" required>
-                        <?php foreach ($options as $value => $label): ?>
-                            <option value="<?= e($value) ?>"<?= $timezone === $value ? ' selected' : '' ?>><?= e($label) ?></option>
+                        <option value="system"<?= $timezone === 'system' ? ' selected' : '' ?>>Same as system settings (<?= e(\Ownswitch\Support\Timezone::label(\Ownswitch\Support\Timezone::systemDefault())) ?>)</option>
+                        <?php foreach (\Ownswitch\Support\Timezone::GROUPS as $region => $zones): ?>
+                            <optgroup label="<?= e($region) ?>">
+                                <?php foreach ($zones as $zoneId => $zoneLabel): ?>
+                                    <option value="<?= e($zoneId) ?>"<?= $timezone === $zoneId ? ' selected' : '' ?>><?= e($zoneLabel) ?></option>
+                                <?php endforeach; ?>
+                            </optgroup>
                         <?php endforeach; ?>
-                        <?php if (!isset($options[$timezone])): ?>
+                        <?php if ($timezone !== 'system' && !isset($options[$timezone])): ?>
                             <option value="<?= e($timezone) ?>" selected><?= e($timezone) ?></option>
                         <?php endif; ?>
                     </select>
                     <div class="form-text">
-                        Example: a call at 2:00 AM New York time shows as 11:00 AM in Pakistan (PKT) when you select Asia/Karachi.
-                        CDR search, failed CDR, and reporting date filters use this timezone.
+                        Pick New York, London, Karachi, or another city. Dashboard totals, stats, CDR times, and report dates follow this clock. Same as system settings uses the timezone chosen under Settings.
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary btn-sm" data-once>Save timezone</button>
+                <button type="submit" class="btn btn-primary btn-sm" data-once>Save profile</button>
             </form>
         </div>
     </div>

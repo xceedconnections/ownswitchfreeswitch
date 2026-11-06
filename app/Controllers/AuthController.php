@@ -97,7 +97,8 @@ final class AuthController extends BaseController
         return $this->view('auth/profile', [
             'title' => 'My profile',
             'user' => $u,
-            'timezone' => Timezone::fromUser($u),
+            'timezone' => Timezone::stored($u),
+            'effective' => Timezone::fromUser($u),
             'options' => Timezone::OPTIONS,
             'errors' => [],
         ]);
@@ -106,23 +107,29 @@ final class AuthController extends BaseController
     public function profileSave(Request $r, array $p = []): Response
     {
         $u = $this->user($r);
-        $tz = Timezone::normalize(is_string($r->post['timezone'] ?? null) ? (string) $r->post['timezone'] : 'UTC');
-        if (!isset(Timezone::OPTIONS[$tz])) {
-            // Allow any valid IANA zone even if not in the picker list
+        $raw = trim(is_string($r->post['timezone'] ?? null) ? (string) $r->post['timezone'] : '');
+        if ($raw === '' || strcasecmp($raw, Timezone::FOLLOW_SYSTEM) === 0) {
+            $tz = Timezone::FOLLOW_SYSTEM;
+        } else {
             try {
-                new \DateTimeZone($tz);
+                new \DateTimeZone($raw);
+                $tz = $raw;
             } catch (\Throwable) {
                 return $this->view('auth/profile', [
                     'title' => 'My profile',
                     'user' => $u,
-                    'timezone' => Timezone::fromUser($u),
+                    'timezone' => Timezone::stored($u),
+                    'effective' => Timezone::fromUser($u),
                     'options' => Timezone::OPTIONS,
-                    'errors' => ['Invalid timezone.'],
+                    'errors' => ['Choose a timezone such as New York, London, or Karachi.'],
                 ], 422);
             }
         }
         $this->db()->prepare('UPDATE users SET timezone = ? WHERE id = ?')->execute([$tz, (int) $u['id']]);
         $this->audit($r, 'profile_timezone', 'user', (int) $u['id'], ['timezone' => $u['timezone'] ?? null], ['timezone' => $tz]);
-        return $this->redirect($r, '/account/profile', 'Timezone saved. CDR and reports now use ' . $tz . '.');
+        $shown = $tz === Timezone::FOLLOW_SYSTEM
+            ? Timezone::label(Timezone::systemDefault()) . ' (system default)'
+            : Timezone::label($tz);
+        return $this->redirect($r, '/account/profile', 'Timezone saved. Stats and reports now use ' . $shown . '.');
     }
 }

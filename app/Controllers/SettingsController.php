@@ -23,6 +23,7 @@ final class SettingsController extends BaseController
             'failover_sip_codes' => '408,480,486,503',
             'kill_switch' => '0',
             'switch_name' => '',
+            'system_timezone' => 'UTC',
             'prepaid_hard_cap_seconds' => '7200',
             'default_codecs' => SipCodecs::defaultStorage($this->db()),
         ];

@@ -39,6 +39,11 @@ final class SettingsService
         'recording_retention_days'    => ['Recording retention (days)', 'int', 'Days to keep FreeSWITCH record_session WAVs under recordings/ (cleanup job).'],
         'switch_logo'                 => ['Switch logo', 'logo', 'PNG/JPG/WEBP/SVG, max 2 MB. Shown in the top navigation for all users.'],
         'switch_name'                 => ['Switch display name', 'text', 'Shown in the portal footer (not the header). Leave blank for “Ownswitch”.'],
+        'system_timezone'             => [
+            'System timezone',
+            'timezone',
+            'Default for the dashboard, stats, and reports. A user who picks a timezone on My profile overrides this for their own login. Example: New York, London, or Karachi.',
+        ],
     ];
 
     /** @var array<string,string>|null */
@@ -138,6 +143,13 @@ final class SettingsService
                     return [null, "{$label}: select at least one codec (e.g. PCMU, PCMA, G729)."];
                 }
                 return [$stored, null];
+            case 'timezone':
+                try {
+                    new \DateTimeZone($v);
+                    return [$v, null];
+                } catch (\Throwable) {
+                    return [null, "{$label} must be a timezone such as New York, London, or Karachi."];
+                }
             case 'logo':
                 // Path set by controller after upload; empty keeps existing.
                 return [$v, null];

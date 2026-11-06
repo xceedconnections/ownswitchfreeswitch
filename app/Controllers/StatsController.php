@@ -13,25 +13,27 @@ final class StatsController extends BaseController
 {
     public function users(Request $r, array $p = []): Response
     {
-        $data = (new LiveDialogStatsService($this->db()))->byCustomer();
+        $tz = \Ownswitch\Support\Timezone::fromUser($this->user($r));
+        $data = (new LiveDialogStatsService($this->db()))->byCustomer($tz);
         return $this->view('stats/users', [
             'title' => 'Stats · Users',
             'rows' => $data['rows'],
             'totals' => $data['totals'],
             'error' => $data['error'],
-            'refreshedAt' => gmdate('Y-m-d H:i:s') . ' UTC',
+            'refreshedAt' => \Ownswitch\Support\Timezone::format(gmdate('Y-m-d H:i:s'), $tz) . ' ' . \Ownswitch\Support\Timezone::label($tz),
         ]);
     }
 
     public function carriers(Request $r, array $p = []): Response
     {
-        $data = (new LiveDialogStatsService($this->db()))->byTrunk();
+        $tz = \Ownswitch\Support\Timezone::fromUser($this->user($r));
+        $data = (new LiveDialogStatsService($this->db()))->byTrunk($tz);
         return $this->view('stats/carriers', [
             'title' => 'Stats · Carriers',
             'rows' => $data['rows'],
             'totals' => $data['totals'],
             'error' => $data['error'],
-            'refreshedAt' => gmdate('Y-m-d H:i:s') . ' UTC',
+            'refreshedAt' => \Ownswitch\Support\Timezone::format(gmdate('Y-m-d H:i:s'), $tz) . ' ' . \Ownswitch\Support\Timezone::label($tz),
         ]);
     }
 }

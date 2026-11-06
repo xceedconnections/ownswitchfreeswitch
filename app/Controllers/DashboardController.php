@@ -19,7 +19,7 @@ final class DashboardController extends BaseController
         $pdo = $this->db();
 
         try {
-            $metrics = (new DashboardMetricsService($pdo))->build($scope);
+            $metrics = (new DashboardMetricsService($pdo))->build($scope, \Ownswitch\Support\Timezone::fromUser($this->user($r)));
         } catch (\Throwable $e) {
             error_log('[ownswitch] dashboard build: ' . $e->getMessage());
             $metrics = DashboardMetricsService::empty();

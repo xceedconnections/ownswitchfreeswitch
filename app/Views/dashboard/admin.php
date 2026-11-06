@@ -38,7 +38,7 @@ if ($routeAttempts === 0) {
 <div class="os-page-head">
     <div>
         <h1 class="os-page-title">Dashboard</h1>
-        <p class="os-page-sub">Live traffic · spend · routing · UTC</p>
+        <p class="os-page-sub">Live traffic · spend · routing · <?= e(tz_label()) ?></p>
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/cdrs')) ?>">CDR</a>

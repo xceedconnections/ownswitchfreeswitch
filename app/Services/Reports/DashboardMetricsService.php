@@ -37,7 +37,7 @@ final class DashboardMetricsService
         ];
     }
 
-    public function build(TenantScope $scope): array
+    public function build(TenantScope $scope, string $tz = 'UTC'): array
     {
         try {
             if (!$this->tableExists('cdrs')) {
@@ -48,12 +48,18 @@ final class DashboardMetricsService
             }
 
             [$tw, $tp] = $scope->where('owned', 'c');
+            $tz = \Ownswitch\Support\Timezone::normalize($tz);
             $since60 = gmdate('Y-m-d H:i:s', time() - 3600);
             $since24 = gmdate('Y-m-d H:i:s', time() - 86400);
-            $todayStart = gmdate('Y-m-d 00:00:00');
-            $yStart = gmdate('Y-m-d 00:00:00', strtotime('-1 day'));
-            $yNow = gmdate('Y-m-d H:i:s', strtotime('-1 day'));
-            $since7 = gmdate('Y-m-d 00:00:00', strtotime('-6 days'));
+            $todayYmd = \Ownswitch\Support\Timezone::today($tz);
+            $todayStart = \Ownswitch\Support\Timezone::localMidnightUtc($todayYmd, $tz);
+            $yYmd = \Ownswitch\Support\Timezone::daysAgo($tz, 1);
+            $yStart = \Ownswitch\Support\Timezone::localMidnightUtc($yYmd, $tz);
+            $yNow = (new \DateTimeImmutable('now', new \DateTimeZone($tz)))
+                ->modify('-1 day')
+                ->setTimezone(new \DateTimeZone('UTC'))
+                ->format('Y-m-d H:i:s');
+            $since7 = \Ownswitch\Support\Timezone::localMidnightUtc(\Ownswitch\Support\Timezone::daysAgo($tz, 6), $tz);
 
             $window60 = $this->aggregate($tw, $tp, $since60);
             $window60['last_min'] = $this->countAttempts($tw, $tp, gmdate('Y-m-d H:i:s', time() - 60));
@@ -63,9 +69,9 @@ final class DashboardMetricsService
                 $peakPerMin = max($peakPerMin, (int) $b['answered'] + (int) $b['failed']);
             }
             $agg7 = $this->aggregate($tw, $tp, $since7);
-            $since30 = gmdate('Y-m-d 00:00:00', strtotime('-29 days'));
-            $monthStart = gmdate('Y-m-01 00:00:00');
-            $weekStart = gmdate('Y-m-d 00:00:00', time() - ((int) gmdate('N') - 1) * 86400);
+            $since30 = \Ownswitch\Support\Timezone::localMidnightUtc(\Ownswitch\Support\Timezone::daysAgo($tz, 29), $tz);
+            $monthStart = \Ownswitch\Support\Timezone::startOfMonthUtc($tz);
+            $weekStart = \Ownswitch\Support\Timezone::startOfWeekUtc($tz);
 
             return [
                 'window60' => $window60,
@@ -76,7 +82,7 @@ final class DashboardMetricsService
                 'peakPerMin' => $peakPerMin,
                 'lastCdrAt' => $this->lastCdrAt($tw, $tp),
                 'traffic60' => $traffic60,
-                'daily7' => $this->dailyUsage($tw, $tp, $since7),
+                'daily7' => $this->dailyUsage($tw, $tp, $since7, $tz),
                 'failed24' => $this->failedBreakdown($tw, $tp, $since24),
                 'routes' => $this->routeHealth($scope),
                 'trunk_groups' => $this->trunkGroupCount($scope),
@@ -187,16 +193,17 @@ final class DashboardMetricsService
     }
 
     /** @return list<array{day:string,attempts:int,answered:int,minutes:float,cost:string,asr:string}> */
-    private function dailyUsage(string $tw, array $tp, string $from): array
+    private function dailyUsage(string $tw, array $tp, string $from, string $tz = 'UTC'): array
     {
         try {
+            $offset = \Ownswitch\Support\Timezone::offsetSeconds($tz);
             $st = $this->pdo->prepare(
-                "SELECT DATE(c.setup_at) AS day, COUNT(*) AS attempts,
+                "SELECT DATE(DATE_ADD(c.setup_at, INTERVAL {$offset} SECOND)) AS day, COUNT(*) AS attempts,
                     SUM(CASE WHEN c.disposition = 'ANSWERED' AND c.duration_actual > 0 THEN 1 ELSE 0 END) AS answered,
                     COALESCE(SUM(CASE WHEN c.disposition = 'ANSWERED' THEN c.duration_billable_customer ELSE 0 END),0) AS billable_s,
                     COALESCE(SUM(c.customer_charge),0) AS cost
                  FROM cdrs c WHERE ({$tw}) AND c.setup_at >= ?
-                 GROUP BY DATE(c.setup_at) ORDER BY day DESC LIMIT 7"
+                 GROUP BY DATE(DATE_ADD(c.setup_at, INTERVAL {$offset} SECOND)) ORDER BY day DESC LIMIT 7"
             );
             $st->execute([...$tp, $from]);
             $out = [];

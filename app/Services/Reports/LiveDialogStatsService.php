@@ -14,6 +14,8 @@ final class LiveDialogStatsService
     {
     }
 
+    private string $reportTz = 'UTC';
+
     /**
      * @return array{dialogs:list<array<string,mixed>>,error:?string}
      */
@@ -46,7 +48,13 @@ final class LiveDialogStatsService
      *
      * @return array{rows:list<array<string,mixed>>,totals:array<string,int|string>,error:?string}
      */
-    public function byCustomer(): array
+    public function byCustomer(string $tz = 'UTC'): array
+    {
+        $this->reportTz = \Ownswitch\Support\Timezone::normalize($tz);
+        return $this->byCustomerRows();
+    }
+
+    private function byCustomerRows(): array
     {
         $live = $this->dialogs();
         $sipMap = $this->sipToCustomer();
@@ -111,7 +119,13 @@ final class LiveDialogStatsService
      *
      * @return array{rows:list<array<string,mixed>>,totals:array<string,int|string>,error:?string}
      */
-    public function byTrunk(): array
+    public function byTrunk(string $tz = 'UTC'): array
+    {
+        $this->reportTz = \Ownswitch\Support\Timezone::normalize($tz);
+        return $this->byTrunkRows();
+    }
+
+    private function byTrunkRows(): array
     {
         $live = $this->dialogs();
         $trunks = $this->trunkIndex();
@@ -264,8 +278,11 @@ final class LiveDialogStatsService
     /** @return array<int,array{attempts:int,answered:int,asr:string,acd:string}> */
     private function todayAsrByCustomer(): array
     {
-        $from = gmdate('Y-m-d 00:00:00');
-        $to = gmdate('Y-m-d 00:00:00', time() + 86400);
+        [$from, $to] = \Ownswitch\Support\Timezone::localDayRangeToUtc(
+            \Ownswitch\Support\Timezone::today($this->reportTz),
+            \Ownswitch\Support\Timezone::today($this->reportTz),
+            $this->reportTz
+        );
         try {
             $st = $this->pdo->prepare(
                 "SELECT customer_id,
@@ -292,8 +309,11 @@ final class LiveDialogStatsService
     /** @return array<int,array{attempts:int,answered:int,asr:string,acd:string}> */
     private function todayAsrByTrunk(): array
     {
-        $from = gmdate('Y-m-d 00:00:00');
-        $to = gmdate('Y-m-d 00:00:00', time() + 86400);
+        [$from, $to] = \Ownswitch\Support\Timezone::localDayRangeToUtc(
+            \Ownswitch\Support\Timezone::today($this->reportTz),
+            \Ownswitch\Support\Timezone::today($this->reportTz),
+            $this->reportTz
+        );
         try {
             $st = $this->pdo->prepare(
                 "SELECT carrier_trunk_id,

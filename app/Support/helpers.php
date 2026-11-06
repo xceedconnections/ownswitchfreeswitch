@@ -131,6 +131,6 @@ if (!function_exists('tz_label')) {
     function tz_label(?string $tz = null): string
     {
         $tz = \Ownswitch\Support\Timezone::normalize($tz ?? user_timezone());
-        return \Ownswitch\Support\Timezone::OPTIONS[$tz] ?? $tz;
+        return \Ownswitch\Support\Timezone::label($tz);
     }
 }

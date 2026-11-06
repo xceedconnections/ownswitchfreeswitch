@@ -41,6 +41,20 @@ $codecOptions = $codecOptions ?? [];
                         <input class="form-check-input" type="checkbox" id="<?= e($key) ?>" name="<?= e($key) ?>" value="1"<?= in_array($val, ['1', 'true'], true) ? ' checked' : '' ?>>
                         <label class="form-check-label" for="<?= e($key) ?>"><?= e($label) ?></label>
                     </div>
+                <?php elseif ($type === 'timezone'): ?>
+                    <label class="form-label" for="<?= e($key) ?>"><?= e($label) ?></label>
+                    <select class="form-select<?= $err ? ' is-invalid' : '' ?>" id="<?= e($key) ?>" name="<?= e($key) ?>">
+                        <?php foreach (\Ownswitch\Support\Timezone::GROUPS as $region => $zones): ?>
+                            <optgroup label="<?= e($region) ?>">
+                                <?php foreach ($zones as $zoneId => $zoneLabel): ?>
+                                    <option value="<?= e($zoneId) ?>"<?= $val === $zoneId ? ' selected' : '' ?>><?= e($zoneLabel) ?></option>
+                                <?php endforeach; ?>
+                            </optgroup>
+                        <?php endforeach; ?>
+                        <?php if ($val !== '' && !isset(\Ownswitch\Support\Timezone::OPTIONS[$val])): ?>
+                            <option value="<?= e((string) $val) ?>" selected><?= e((string) $val) ?></option>
+                        <?php endif; ?>
+                    </select>
                 <?php elseif ($type === 'media'): ?>
                     <label class="form-label" for="<?= e($key) ?>"><?= e($label) ?></label>
                     <select class="form-select" id="<?= e($key) ?>" name="<?= e($key) ?>">
