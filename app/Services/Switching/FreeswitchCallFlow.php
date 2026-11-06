@@ -234,7 +234,7 @@ final class FreeswitchCallFlow
         if ($dest === '' && isset($sx->callflow->caller_profile->destination_number)) {
             $dest = urldecode((string) $sx->callflow->caller_profile->destination_number);
         }
-        $src = (string) ($vars['effective_caller_id_number'] ?? $vars['caller_id_number'] ?? $vars['sip_from_user_stripped'] ?? $vars['sip_from_user'] ?? '');
+        $src = $this->presentedCli($vars);
         $user = (string) ($vars['os_sip_user'] ?? $vars['sip_auth_username'] ?? $vars['username'] ?? '');
         if ($user === '') {
             $user = (string) ($vars['sip_from_user'] ?? '');
@@ -325,6 +325,9 @@ final class FreeswitchCallFlow
         $lines = ['--- signaling ---'];
         $map = [
             'sip_req_uri' => 'Request',
+            'sip_from_display' => 'From display',
+            'caller_id_name' => 'Caller ID name',
+            'caller_id_number' => 'Caller ID number',
             'sip_full_from' => 'From',
             'sip_full_to' => 'To',
             'sip_call_id' => 'Call-ID',
@@ -581,6 +584,50 @@ final class FreeswitchCallFlow
             $digits = preg_replace('/\D+/', '', $pfx) ?? '';
             if ($digits !== '' && str_starts_with($dest, $digits)) {
                 return $cli;
+            }
+        }
+        return $fallback;
+    }
+
+    /**
+     * CLI shown on the CDR. Softphones often put the dialled caller ID in the From display
+     * name ("12138007000" <sip:owner@domain>) while caller_id_number is only the SIP username.
+     *
+     * @param array<string,string> $vars
+     */
+    private function presentedCli(array $vars): string
+    {
+        $candidates = [];
+        foreach (['sip_from_display', 'caller_id_name'] as $k) {
+            $v = trim((string) ($vars[$k] ?? ''));
+            if ($v !== '') {
+                $candidates[] = $v;
+            }
+        }
+        $full = trim((string) ($vars['sip_full_from'] ?? ''));
+        if (preg_match('/^\s*"([^"]+)"/', $full, $m) === 1) {
+            $candidates[] = $m[1];
+        }
+        foreach (['sip_h_Remote-Party-ID', 'sip_h_P-Asserted-Identity', 'sip_remote_party_id', 'sip_p_asserted_identity'] as $k) {
+            $v = trim((string) ($vars[$k] ?? ''));
+            if ($v !== '') {
+                $candidates[] = $v;
+            }
+        }
+        foreach (['effective_caller_id_number', 'origination_caller_id_number', 'caller_id_number', 'sip_from_user_stripped', 'sip_from_user'] as $k) {
+            $v = trim((string) ($vars[$k] ?? ''));
+            if ($v !== '') {
+                $candidates[] = $v;
+            }
+        }
+        $fallback = '';
+        foreach ($candidates as $c) {
+            if ($fallback === '') {
+                $fallback = $c;
+            }
+            $digits = $this->digitsOnly($c);
+            if (strlen(ltrim($digits, '+')) >= 6) {
+                return $digits;
             }
         }
         return $fallback;
