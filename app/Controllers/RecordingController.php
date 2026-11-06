@@ -13,6 +13,11 @@ final class RecordingController extends BaseController
     public function index(Request $r, array $p = []): Response
     {
         $svc = new RecordingService($this->db());
+        try {
+            $svc->syncPending();
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] recordings sync: ' . $e->getMessage());
+        }
         $res = $svc->repo()->paginate($this->scope($r), [], (int) $r->query('page', 1), 25);
         return $this->view('recordings/index', ['title' => 'Recordings', 'result' => $res]);
     }

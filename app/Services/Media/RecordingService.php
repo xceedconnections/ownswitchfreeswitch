@@ -60,6 +60,68 @@ final class RecordingService
             ->execute([$recordingId, $userId, $action, $ip]);
     }
 
+    /**
+     * Link pending record-policy CDRs to wav files FreeSWITCH already wrote.
+     * The file name is the FreeSWITCH channel uuid.
+     */
+    public function syncPending(int $limit = 100): int
+    {
+        $limit = max(1, min(500, $limit));
+        $st = $this->pdo->query(
+            "SELECT id, external_cdr_key, customer_id, reseller_id, duration_actual
+             FROM cdrs
+             WHERE recording_status = 'pending' AND customer_id IS NOT NULL
+             ORDER BY id DESC
+             LIMIT {$limit}"
+        );
+        $linked = 0;
+        foreach ($st ? ($st->fetchAll(PDO::FETCH_ASSOC) ?: []) : [] as $row) {
+            if ($this->attachCdrRow($row)) {
+                $linked++;
+            }
+        }
+        return $linked;
+    }
+
+    /** @param array<string,mixed> $row */
+    public function attachCdrRow(array $row): bool
+    {
+        $cdrId = (int) ($row['id'] ?? 0);
+        $customerId = (int) ($row['customer_id'] ?? 0);
+        if ($cdrId <= 0 || $customerId <= 0) {
+            return false;
+        }
+        $exists = $this->pdo->prepare('SELECT id FROM recordings WHERE cdr_id = ? LIMIT 1');
+        $exists->execute([$cdrId]);
+        if ($exists->fetchColumn()) {
+            $this->pdo->prepare("UPDATE cdrs SET recording_status = 'available' WHERE id = ? AND recording_status = 'pending'")
+                ->execute([$cdrId]);
+            return false;
+        }
+        $key = (string) ($row['external_cdr_key'] ?? '');
+        $uuid = str_contains($key, ':') ? substr($key, strrpos($key, ':') + 1) : $key;
+        if (!preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $uuid)) {
+            return false;
+        }
+        $relative = $uuid . '.wav';
+        if ($this->resolvePath($relative) === null) {
+            return false;
+        }
+        $days = 30;
+        try {
+            $raw = (new \Ownswitch\Services\Settings\SettingsService($this->pdo))->get('recording_retention_days', '30');
+            if (is_numeric($raw) && (int) $raw > 0) {
+                $days = (int) $raw;
+            }
+        } catch (\Throwable) {
+            $days = 30;
+        }
+        $reseller = isset($row['reseller_id']) && $row['reseller_id'] !== null ? (int) $row['reseller_id'] : null;
+        $this->register($customerId, $reseller, $cdrId, $relative, (int) ($row['duration_actual'] ?? 0), $days);
+        $this->pdo->prepare("UPDATE cdrs SET recording_status = 'available' WHERE id = ?")->execute([$cdrId]);
+        return true;
+    }
+
     /** Register a finished recording file (called by the media worker). */
     public function register(int $customerId, ?int $resellerId, ?int $cdrId, string $relativePath, int $durationSec, int $retentionDays): int
     {

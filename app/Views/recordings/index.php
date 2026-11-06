@@ -8,7 +8,7 @@
 <div class="os-table-wrap">
 <?php if ($result['total'] === 0): ?>
     <div class="os-empty"><div class="os-empty-title">No recordings</div>
-        <div>Recordings exist only when a customer or trunk uses the <strong>record</strong> media policy and <code>RECORDINGS_DIR</code> is configured. Access is audited.</div></div>
+        <div>Set the SIP user media policy to <strong>Record</strong>. The file appears here after the call ends. Access is audited.</div></div>
 <?php else: ?>
     <div class="table-responsive"><table class="table table-sm table-hover mb-0 os-table">
         <thead><tr><th>ID</th><th>Created (UTC)</th><th>CDR</th><th class="os-num">Duration (s)</th><th class="os-num">Size</th><th>Status</th><th></th></tr></thead>

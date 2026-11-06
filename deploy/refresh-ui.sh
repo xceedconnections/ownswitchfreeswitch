@@ -276,6 +276,14 @@ if [[ "$AUTH_PARAM_ADDED" == "1" ]]; then
   fi
 fi
 
+# FreeSWITCH must be able to create wavs; the portal group must be able to read them.
+REC_DIR="${RECORDINGS_DIR:-/var/lib/ownswitch/recordings}"
+if getent passwd freeswitch >/dev/null 2>&1; then
+  install -d -m 2770 -o freeswitch -g ownswitch "$REC_DIR" 2>/dev/null || true
+  chown freeswitch:ownswitch "$REC_DIR" 2>/dev/null || true
+  chmod 2770 "$REC_DIR" 2>/dev/null || true
+fi
+
 # Warn if directory auth module is missing (SIP REGISTER will Forbidden).
 if [[ ! -f /usr/local/freeswitch/lib/freeswitch/mod/mod_xml_curl.so ]]; then
   echo "WARN: mod_xml_curl.so missing — SIP REGISTER will fail. Run: sudo bash $SRC/deploy/fix-fs-xml-curl.sh" >&2

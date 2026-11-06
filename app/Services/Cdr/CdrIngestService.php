@@ -141,6 +141,20 @@ final class CdrIngestService
             return $id;
         });
 
+        if (($row['recording_status'] ?? '') === 'pending' && $customer !== null) {
+            try {
+                (new \Ownswitch\Services\Media\RecordingService($this->pdo))->attachCdrRow([
+                    'id' => $id,
+                    'external_cdr_key' => $key,
+                    'customer_id' => (int) $customer['id'],
+                    'reseller_id' => $customer['reseller_id'] ?? null,
+                    'duration_actual' => $duration,
+                ]);
+            } catch (\Throwable $e) {
+                error_log('[ownswitch] recording attach: ' . $e->getMessage());
+            }
+        }
+
         return ['status' => 'ingested', 'id' => $id, 'settlement' => (string) $row['settlement_status'], 'discrepancy' => $discrepancy];
     }
 
