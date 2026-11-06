@@ -84,8 +84,16 @@ if ($showCost) {
         <p class="os-page-sub">Full call detail record</p>
     </div>
     <div class="d-flex gap-2">
-        <?php if (!empty($cdr['recording_id'])): ?>
-            <a class="btn btn-outline-primary btn-sm" href="<?= e(url('/recordings/' . (int) $cdr['recording_id'] . '/play')) ?>"><i class="bi bi-play-circle me-1"></i>Play</a>
+        <?php if (!empty($cdr['recording_id'])):
+            $playUrl = url('/recordings/' . (int) $cdr['recording_id'] . '/play');
+            $dlUrl = url('/recordings/' . (int) $cdr['recording_id'] . '/play?download=1');
+            $playLabel = trim((string) ($cdr['src'] ?? '')) . ' → ' . trim((string) ($cdr['dst_normalized'] ?? ''));
+            ?>
+            <button type="button" class="btn btn-outline-primary btn-sm" title="Play recording"
+                data-os-play data-src="<?= e($playUrl) ?>" data-download="<?= e($dlUrl) ?>" data-label="<?= e($playLabel) ?>">
+                <i class="bi bi-play-circle me-1"></i>Play
+            </button>
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e($dlUrl) ?>" title="Download recording"><i class="bi bi-download"></i></a>
         <?php endif; ?>
         <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/cdrs')) ?>"><i class="bi bi-arrow-left me-1"></i>Back</a>
     </div>
@@ -124,4 +132,5 @@ if ($sipTrace !== '' || $legs !== []):
     <?php endif; ?>
 </div>
 <?php endif; ?>
+<?php include __DIR__ . '/../partials/audio_player.php'; ?>
 

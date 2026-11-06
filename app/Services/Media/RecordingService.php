@@ -104,6 +104,18 @@ final class RecordingService
         return true;
     }
 
+    /** @param list<int> $ids @return int rows removed */
+    public function deleteMany(array $ids, TenantScope $scope): int
+    {
+        $n = 0;
+        foreach (array_unique(array_map('intval', $ids)) as $id) {
+            if ($id > 0 && $this->delete($id, $scope)) {
+                $n++;
+            }
+        }
+        return $n;
+    }
+
     public function logAccess(int $recordingId, int $userId, string $action, string $ip): void
     {
         $this->pdo->prepare('INSERT INTO recording_access_logs (recording_id, user_id, action, ip) VALUES (?,?,?,?)')

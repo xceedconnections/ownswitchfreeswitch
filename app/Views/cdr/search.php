@@ -92,11 +92,17 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
                 <td><input type="checkbox" form="cdr-bulk-form" name="ids[]" value="<?= e((string) $c['id']) ?>" class="cdr-row-check"></td>
                 <?php endif; ?>
                 <td><a href="<?= e(url('/cdrs/' . (int) $c['id'])) ?>" class="os-mono"><?= e($c['id']) ?></a><?= !empty($c['is_demo']) ? ' <span class="badge text-bg-warning">DEMO</span>' : '' ?></td>
-                <td>
-                    <?php if (!empty($c['recording_id'])): ?>
-                        <a href="<?= e(url('/recordings/' . (int) $c['recording_id'] . '/play')) ?>" class="text-decoration-none me-1" title="Play recording">
+                <td class="text-nowrap">
+                    <?php if (!empty($c['recording_id'])):
+                        $playUrl = url('/recordings/' . (int) $c['recording_id'] . '/play');
+                        $dlUrl = url('/recordings/' . (int) $c['recording_id'] . '/play?download=1');
+                        $playLabel = trim((string) ($c['src'] ?? '')) . ' → ' . trim((string) ($c['dst_normalized'] ?? ''));
+                        ?>
+                        <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none me-1" title="Play recording"
+                            data-os-play data-src="<?= e($playUrl) ?>" data-download="<?= e($dlUrl) ?>" data-label="<?= e($playLabel) ?>">
                             <i class="bi bi-play-circle"></i>
-                        </a>
+                        </button>
+                        <a href="<?= e($dlUrl) ?>" class="text-decoration-none me-1" title="Download recording"><i class="bi bi-download"></i></a>
                     <?php endif; ?>
                     <?php if (!empty($c['has_sip_trace'])): ?>
                         <a href="<?= e(url('/cdrs/' . (int) $c['id'])) ?>#sip-trace" class="text-decoration-none" title="SIP trace">
@@ -157,3 +163,4 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
     });
 })();
 </script>
+<?php include __DIR__ . '/../partials/audio_player.php'; ?>
