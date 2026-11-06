@@ -277,8 +277,10 @@ final class CdrSearchService
     public function exportCsv(TenantScope $scope, array $filters, callable $write): void
     {
         $tz = \Ownswitch\Support\Timezone::normalize(is_string($filters['tz'] ?? null) ? (string) $filters['tz'] : 'UTC');
-        $hdr = ['id', 'setup_at_' . $tz, 'src', 'dst', 'disposition', 'sip_code', 'sip_code_label', 'duration_s', 'billable_s', 'rate', 'increment', 'charge', 'currency'];
         $staff = $scope->isStaff();
+        $hdr = $staff
+            ? ['id', 'setup_at_' . $tz, 'src', 'dst', 'disposition', 'sip_code', 'sip_code_label', 'duration_s', 'billable_s', 'rate', 'increment', 'charge', 'currency']
+            : ['id', 'setup_at_' . $tz, 'src', 'dst', 'disposition', 'duration', 'rate', 'increment', 'charge', 'currency'];
         if ($staff) {
             array_push($hdr, 'carrier', 'carrier_cost', 'margin');
         }
@@ -297,9 +299,12 @@ final class CdrSearchService
             foreach ($rows as $r) {
                 $code = (int) ($r['sip_response'] ?? 0);
                 $setupLocal = \Ownswitch\Support\Timezone::format(isset($r['setup_at']) ? (string) $r['setup_at'] : null, $tz);
-                $line = [$r['id'], $setupLocal, $r['src'], $r['dst_normalized'], $r['disposition'], $code > 0 ? $code : '',
-                    SipCode::label($code), $r['duration_actual'],
-                    $r['duration_billable_customer'], $r['customer_rate'], ($r['customer_initial'] ?? '') . '/' . ($r['customer_subsequent'] ?? ''), $r['customer_charge'], $r['currency']];
+                $line = $staff
+                    ? [$r['id'], $setupLocal, $r['src'], $r['dst_normalized'], $r['disposition'], $code > 0 ? $code : '',
+                        SipCode::label($code), $r['duration_actual'],
+                        $r['duration_billable_customer'], $r['customer_rate'], ($r['customer_initial'] ?? '') . '/' . ($r['customer_subsequent'] ?? ''), $r['customer_charge'], $r['currency']]
+                    : [$r['id'], $setupLocal, $r['src'], $r['dst_normalized'], $r['disposition'],
+                        fmt_duration($r['duration_billable_customer'] ?? 0), $r['customer_rate'], ($r['customer_initial'] ?? '') . '/' . ($r['customer_subsequent'] ?? ''), $r['customer_charge'], $r['currency']];
                 if ($staff) {
                     array_push($line, $r['carrier_name'], $r['carrier_cost'], $r['gross_margin']);
                 }

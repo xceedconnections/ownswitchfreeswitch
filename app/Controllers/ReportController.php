@@ -121,6 +121,7 @@ final class ReportController extends BaseController
             $res['asr'] = $stats['asr'];
             $res['acd'] = $stats['acd'];
             $res['duration_min'] = number_format($seconds / 60, 2, '.', '');
+            $res['talk_seconds'] = $seconds;
 
             $st = $this->db()->prepare(
                 "SELECT COUNT(*) AS answered,
@@ -166,7 +167,13 @@ final class ReportController extends BaseController
         } catch (\Throwable $e) {
             error_log('[ownswitch] pdd report: ' . $e->getMessage());
         }
-        return $this->view('reports/pdd', ['title' => 'PDD Report', 'res' => $res, 'from' => $from, 'to' => $to]);
+        return $this->view('reports/pdd', [
+            'title' => 'PDD Report',
+            'res' => $res,
+            'from' => $from,
+            'to' => $to,
+            'staff' => $scope->isStaff(),
+        ]);
     }
 
     /** Unrated / unattributed / rating-discrepancy CDRs. */

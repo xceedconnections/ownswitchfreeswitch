@@ -5,6 +5,14 @@
  * @var array $result @var array $query
  */
 $showCost = !empty($res['show_cost']);
+$moneyLabel = $showCost ? 'Sell' : 'Charged';
+$durLabel = $showCost ? 'Duration/Min' : 'Duration';
+$fmtDur = static function (array $row) use ($showCost): string {
+    if ($showCost) {
+        return (string) ($row['duration_min'] ?? '0.00');
+    }
+    return fmt_duration($row['session_time'] ?? 0);
+};
 $cols = $res['columns'] ?? [];
 $rows = $res['rows'] ?? [];
 $tot = $res['totals'] ?? [];
@@ -50,8 +58,8 @@ $query = $query ?? ['from' => $from, 'to' => $to];
     <div class="os-report-hero-stat"><span class="lbl">Answered</span><span class="val"><?= e(number_format((int) ($tot['answered'] ?? 0))) ?></span></div>
     <div class="os-report-hero-stat"><span class="lbl">ASR</span><span class="val"><?= e((string) ($tot['asr'] ?? '0')) ?>%</span></div>
     <div class="os-report-hero-stat"><span class="lbl">ACD</span><span class="val"><?= e((string) ($tot['acd'] ?? '0')) ?><span style="font-size:.85rem;opacity:.85"> s</span></span></div>
-    <div class="os-report-hero-stat"><span class="lbl">Duration/Min</span><span class="val"><?= e((string) ($tot['duration_min'] ?? '0.00')) ?></span></div>
-    <div class="os-report-hero-stat"><span class="lbl">Sell</span><span class="val" style="font-size:1.1rem"><?= e((string) ($tot['sell'] ?? '0')) ?></span></div>
+    <div class="os-report-hero-stat"><span class="lbl"><?= e($durLabel) ?></span><span class="val"><?= e($fmtDur($tot)) ?></span></div>
+    <div class="os-report-hero-stat"><span class="lbl"><?= e($moneyLabel) ?></span><span class="val" style="font-size:1.1rem"><?= e((string) ($tot['sell'] ?? '0')) ?></span></div>
     <?php if ($showCost): ?>
         <div class="os-report-hero-stat"><span class="lbl">Buy</span><span class="val" style="font-size:1.1rem"><?= e((string) ($tot['buy'] ?? '0')) ?></span></div>
         <div class="os-report-hero-stat"><span class="lbl">Profit</span><span class="val" style="font-size:1.1rem"><?= e((string) ($tot['profit'] ?? '0')) ?></span></div>
@@ -74,8 +82,8 @@ $query = $query ?? ['from' => $from, 'to' => $to];
                 <th class="os-num">Answered</th>
                 <th class="os-num">ASR %</th>
                 <th class="os-num">ACD</th>
-                <th class="os-num">Duration/Min</th>
-                <th class="os-num">Sell</th>
+                <th class="os-num"><?= e($durLabel) ?></th>
+                <th class="os-num"><?= e($moneyLabel) ?></th>
                 <?php if ($showCost): ?>
                     <th class="os-num">Buy</th>
                     <th class="os-num">Profit</th>
@@ -96,7 +104,7 @@ $query = $query ?? ['from' => $from, 'to' => $to];
                     <td class="os-num"><?= e($r['answered']) ?></td>
                     <td class="os-num"><?= e($r['asr']) ?></td>
                     <td class="os-num"><?= e($r['acd']) ?></td>
-                    <td class="os-num os-mono"><?= e($r['duration_min']) ?></td>
+                    <td class="os-num os-mono"><?= e($fmtDur($r)) ?></td>
                     <td class="os-num os-mono"><?= e($r['sell']) ?></td>
                     <?php if ($showCost): ?>
                         <td class="os-num os-mono"><?= e($r['buy']) ?></td>
@@ -113,7 +121,7 @@ $query = $query ?? ['from' => $from, 'to' => $to];
                 <td class="os-num"><?= e($tot['answered']) ?></td>
                 <td class="os-num"><?= e($tot['asr']) ?></td>
                 <td class="os-num"><?= e($tot['acd']) ?></td>
-                <td class="os-num os-mono"><?= e($tot['duration_min']) ?></td>
+                <td class="os-num os-mono"><?= e($fmtDur($tot)) ?></td>
                 <td class="os-num os-mono"><?= e($tot['sell']) ?></td>
                 <?php if ($showCost): ?>
                     <td class="os-num os-mono"><?= e($tot['buy']) ?></td>

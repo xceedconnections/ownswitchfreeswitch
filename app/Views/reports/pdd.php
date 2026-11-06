@@ -1,5 +1,6 @@
 <?php
-/** @var array $res @var string $from @var string $to */
+/** @var array $res @var string $from @var string $to @var bool $staff */
+$staff = !empty($staff);
 ?>
 <div class="os-page-head">
     <div>
@@ -19,7 +20,7 @@
     <div class="os-report-hero-stat"><span class="lbl">Answered</span><span class="val"><?= e(number_format((int) $res['answered'])) ?></span></div>
     <div class="os-report-hero-stat"><span class="lbl">ASR</span><span class="val"><?= e((string) ($res['asr'] ?? '0')) ?>%</span></div>
     <div class="os-report-hero-stat"><span class="lbl">ACD</span><span class="val"><?= e((string) ($res['acd'] ?? '0')) ?><span style="font-size:.85rem;opacity:.85"> s</span></span></div>
-    <div class="os-report-hero-stat"><span class="lbl">Duration/Min</span><span class="val"><?= e((string) ($res['duration_min'] ?? '0.00')) ?></span></div>
+    <div class="os-report-hero-stat"><span class="lbl"><?= $staff ? 'Duration/Min' : 'Duration' ?></span><span class="val"><?= e($staff ? (string) ($res['duration_min'] ?? '0.00') : fmt_duration($res['talk_seconds'] ?? 0)) ?></span></div>
     <div class="os-report-hero-stat"><span class="lbl">Avg PDD</span><span class="val"><?= e($res['avg_pdd_ms']) ?><span style="font-size:.85rem;opacity:.85"> ms</span></span></div>
     <div class="os-report-hero-stat"><span class="lbl">P50</span><span class="val"><?= e($res['p50_ms']) ?><span style="font-size:.85rem;opacity:.85"> ms</span></span></div>
     <div class="os-report-hero-stat"><span class="lbl">P95</span><span class="val"><?= e($res['p95_ms']) ?><span style="font-size:.85rem;opacity:.85"> ms</span></span></div>

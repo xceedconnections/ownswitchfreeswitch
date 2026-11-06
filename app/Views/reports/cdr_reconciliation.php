@@ -34,7 +34,7 @@ $showCost = !empty($showCost);
     <div class="os-empty"><div class="os-empty-title">Clean</div><div>No reconciliation issues in this range.</div></div>
 <?php else: ?>
     <div class="table-responsive"><table class="table table-sm table-hover mb-0 os-table">
-        <thead><tr><th>ID</th><th>Setup</th><th>Disposition</th><th>Settlement</th><th>Disc.</th><th class="os-num">Sell</th><?php if ($showCost): ?><th class="os-num">Buy</th><?php endif; ?><th></th></tr></thead>
+        <thead><tr><th>ID</th><th>Setup</th><th>Disposition</th><th>Settlement</th><th>Disc.</th><th class="os-num"><?= $showCost ? 'Sell' : 'Charged' ?></th><?php if ($showCost): ?><th class="os-num">Buy</th><?php endif; ?><th></th></tr></thead>
         <tbody>
         <?php foreach ($result['rows'] as $row): ?>
             <tr>

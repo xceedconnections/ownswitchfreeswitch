@@ -1,6 +1,7 @@
 <?php
 /** @var array $result @var array $f @var array $customers @var array $carriers @var list<string> $dispositions @var bool $showCost @var array $query @var bool $canDelete */
 $canDelete = !empty($canDelete);
+$staff = !empty($showCost);
 $exportBase = array_filter($f, static fn ($v) => is_string($v) || is_int($v));
 $csvQs = http_build_query($exportBase);
 $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
@@ -71,8 +72,8 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
             <?php if ($canDelete): ?><th style="width:2rem"><input type="checkbox" id="cdr-check-all" aria-label="Select all"></th><?php endif; ?>
             <th>ID</th><th></th><th>Time (<?= e(user_timezone()) ?>)</th>
             <?php if ($customers): ?><th>Customer</th><?php endif; ?>
-            <th>SIP</th><th>Dir</th><th>CallerID</th><th>Destination</th><th>Description</th><th>Result</th><th>SIP code</th>
-            <th class="os-num">Actual</th><th class="os-num">Billed</th><th>Hangup</th><th>IP</th><th>I/S</th><th class="os-num">Charge</th>
+            <th>SIP</th><?php if ($staff): ?><th>Dir</th><?php endif; ?><th>CallerID</th><th>Destination</th><th>Description</th><th>Result</th><?php if ($staff): ?><th>SIP code</th><?php endif; ?>
+            <?php if ($staff): ?><th class="os-num">Actual</th><th class="os-num">Billed</th><?php else: ?><th class="os-num">Duration</th><?php endif; ?><th>Hangup</th><?php if ($staff): ?><th>IP</th><?php endif; ?><th>I/S</th><th class="os-num">Charge</th>
             <?php if ($showCost): ?><th>Provider / Trunk</th><th class="os-num">Cost</th><th class="os-num">Margin</th><?php endif; ?>
         </tr></thead>
         <tbody>
@@ -103,19 +104,25 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
                 <td class="os-mono"><?= e(fmt_local((string) $c['setup_at'])) ?></td>
                 <?php if ($customers): ?><td><?= e($c['customer_name'] ?? '—') ?></td><?php endif; ?>
                 <td class="os-mono"><?= e($c['sip_username'] ?? '—') ?></td>
+                <?php if ($staff): ?>
                 <td class="small"><?php
                     $dir = (string) ($c['direction'] ?? '');
                     echo e($dir === 'inbound-did' || $dir === 'inbound' ? 'In' : ($dir === 'outbound' ? 'Out' : ($dir !== '' ? $dir : '—')));
                 ?></td>
+                <?php endif; ?>
                 <td class="os-mono"><?= e($c['src'] ?? '—') ?></td>
                 <td class="os-mono"><?= e($c['dst_normalized']) ?></td>
                 <td><?php if (!empty($c['area_description'])): ?><span class="os-area-tag"><?= e((string) $c['area_description']) ?></span><?php else: ?><span class="text-muted">—</span><?php endif; ?></td>
                 <td><span class="badge text-bg-<?= e($dispCls) ?>"><?= e($disp !== '' ? $disp : '—') ?></span></td>
+                <?php if ($staff): ?>
                 <td class="small" title="<?= e($c['sip_code_label'] ?? '') ?>"><?= e($c['sip_code_short'] ?? ($c['sip_response'] ?? '—')) ?></td>
                 <td class="os-num"><?= e($c['duration_actual']) ?></td>
                 <td class="os-num"><?= e($c['duration_billable_customer']) ?></td>
+                <?php else: ?>
+                <td class="os-num os-mono"><?= e(fmt_duration($c['duration_billable_customer'] ?? 0)) ?></td>
+                <?php endif; ?>
                 <td class="small"><?= e($c['hangup_initiator'] ?? '—') ?></td>
-                <td class="os-mono small"><?= e($c['source_ip'] ?? '—') ?></td>
+                <?php if ($staff): ?><td class="os-mono small"><?= e($c['source_ip'] ?? '—') ?></td><?php endif; ?>
                 <td class="os-mono"><?= e($c['customer_initial'] ?? '—') ?>/<?= e($c['customer_subsequent'] ?? '—') ?></td>
                 <td class="os-num os-mono"><?= e($c['customer_charge']) ?></td>
                 <?php if ($showCost): ?>

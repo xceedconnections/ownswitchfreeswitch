@@ -88,8 +88,8 @@ if (!function_exists('fmt_money')) {
 if (!function_exists('fmt_duration')) {
     function fmt_duration(int|string|null $sec): string
     {
-        $sec = (int) $sec;
-        return sprintf('%d:%02d:%02d', intdiv($sec, 3600), intdiv($sec % 3600, 60), $sec % 60);
+        $sec = max(0, (int) $sec);
+        return sprintf('%02d:%02d:%02d', intdiv($sec, 3600), intdiv($sec % 3600, 60), $sec % 60);
     }
 }
 
