@@ -19,6 +19,21 @@ $acdFmt = static function (string $acd): string {
     return sprintf('%d:%02d', intdiv($s, 60), $s % 60);
 };
 $flowing = $w['attempts'] > 0;
+$routeAsr = (float) ($w['asr'] ?? 0);
+$routeAttempts = (int) ($w['attempts'] ?? 0);
+if ($routeAttempts === 0) {
+    $routePill = 'No recent calls';
+    $routePillClass = 'os-pill';
+} elseif ($routeAsr <= 0) {
+    $routePill = 'No answers';
+    $routePillClass = 'os-pill os-pill-warn';
+} elseif ($routeAsr < 30) {
+    $routePill = 'Low ASR';
+    $routePillClass = 'os-pill os-pill-warn';
+} else {
+    $routePill = 'Healthy';
+    $routePillClass = 'os-pill os-pill-ok';
+}
 ?>
 <div class="os-page-head">
     <div>
@@ -118,8 +133,8 @@ $flowing = $w['attempts'] > 0;
     </div>
     <div class="os-kpi os-kpi--slate">
         <div class="lbl">Routing</div>
-        <div class="val" style="font-size:1.15rem"><?= ($metrics['trunk_groups'] ?? 0) > 0 ? 'Healthy' : 'Setup' ?></div>
-        <div class="sub"><?= e((string) ($metrics['trunk_groups'] ?? 0)) ?> trunk groups</div>
+        <div class="val" style="font-size:1.15rem"><?= e($routePill) ?></div>
+        <div class="sub"><?= e((string) ($w['answered'] ?? 0)) ?> / <?= e((string) ($w['attempts'] ?? 0)) ?> answered · <?= e((string) ($metrics['trunk_groups'] ?? 0)) ?> groups</div>
     </div>
 </div>
 
@@ -162,7 +177,7 @@ $flowing = $w['attempts'] > 0;
         </div>
         <?php foreach ($failed['reasons'] as $reason): ?>
             <div class="os-fail-row">
-                <div class="meta"><span><?= e($reason['label']) ?></span><span><?= e((string) $reason['pct']) ?>%</span></div>
+                <div class="meta"><span><?= e($reason['label']) ?> · <?= e((string) $reason['count']) ?></span><span><?= e((string) $reason['pct']) ?>%</span></div>
                 <div class="os-fail-track"><div class="os-fail-fill" style="width:<?= e((string) min(100, $reason['pct'])) ?>%"></div></div>
             </div>
         <?php endforeach; ?>
@@ -175,7 +190,7 @@ $flowing = $w['attempts'] > 0;
     <div class="os-widget">
         <div class="os-widget-h">
             <h2 class="os-widget-title">Routing</h2>
-            <span class="os-pill os-pill-ok">Routing <?= ($metrics['trunk_groups'] ?? 0) > 0 ? 'healthy' : 'idle' ?></span>
+            <span class="<?= e($routePillClass) ?>"><?= e($routePill) ?></span>
         </div>
         <?php if (!$routes): ?>
             <div class="small text-muted mb-2">No trunk groups yet.</div>
@@ -189,8 +204,8 @@ $flowing = $w['attempts'] > 0;
                         <div class="small text-muted"><?= e($route['status']) ?></div>
                     </div>
                     <div class="text-end small">
-                        <div><?= e((string) $route['share']) ?>%</div>
-                        <div class="text-muted">ASR <?= e($route['asr']) ?></div>
+                        <div><?= (int) ($route['attempts'] ?? 0) > 0 ? e((string) $route['asr']) . '% ASR' : '— ASR' ?></div>
+                        <div class="text-muted"><?= e((string) ($route['answered'] ?? 0)) ?> / <?= e((string) ($route['attempts'] ?? 0)) ?> answered</div>
                     </div>
                 </div>
             <?php endforeach; ?>

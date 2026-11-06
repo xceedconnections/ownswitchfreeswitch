@@ -199,9 +199,11 @@ final class DashboardMetricsService
             $failed = (int) ($tot['failed'] ?? 0);
 
             $caseExpr = "CASE
-                WHEN c.disposition IN ('FAILED','CANCELLED') THEN 'Failed at carrier'
-                WHEN c.disposition = 'NO_ANSWER' THEN 'No answer'
-                WHEN c.disposition = 'BUSY' THEN 'Busy'
+                WHEN c.disposition = 'BUSY' OR c.hangup_cause LIKE '%BUSY%' THEN 'Busy'
+                WHEN c.disposition = 'NO_ANSWER' OR c.hangup_cause LIKE '%NO_ANSWER%' OR c.hangup_cause LIKE '%NO_USER%' THEN 'No answer'
+                WHEN c.disposition = 'CANCELLED' OR c.hangup_cause LIKE '%CANCEL%' THEN 'Cancelled'
+                WHEN c.carrier_trunk_id IS NULL THEN 'Rejected before carrier'
+                WHEN c.disposition = 'FAILED' THEN 'Failed at carrier'
                 ELSE CONCAT('Other (', COALESCE(c.disposition, 'unknown'), ')')
              END";
             $st2 = $this->pdo->prepare(
@@ -241,7 +243,7 @@ final class DashboardMetricsService
         }
     }
 
-    /** @return list<array{name:string,role:string,status:string,share:float,asr:string}> */
+    /** @return list<array{name:string,role:string,status:string,share:float,asr:string,attempts:int,answered:int}> */
     private function routeHealth(TenantScope $scope): array
     {
         if (!$scope->isGlobal() && !$scope->isStaff()) {
@@ -254,53 +256,151 @@ final class DashboardMetricsService
             $cols = $this->columns('routing_plans');
             $statusSel = in_array('status', $cols, true) ? 'status' : "'' AS status";
             $plans = $this->pdo->query(
-                "SELECT id, name, {$statusSel} FROM routing_plans ORDER BY id ASC LIMIT 5"
+                "SELECT id, name, {$statusSel} FROM routing_plans ORDER BY id ASC LIMIT 8"
             )->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (\Throwable) {
             return [];
         }
+        if ($plans === []) {
+            return [];
+        }
 
-        $since60 = gmdate('Y-m-d H:i:s', time() - 3600);
-        $statsByPlan = [];
+        $statsByPlan = $this->planCallStats(array_map(static fn ($p) => (int) $p['id'], $plans));
         $totalAttempts = 0;
-        try {
-            if ($this->tableExists('cdrs') && $this->tableExists('routing_rules')) {
-                $st = $this->pdo->prepare(
-                    "SELECT r.routing_plan_id AS plan_id,
-                            COUNT(*) AS attempts,
-                            SUM(CASE WHEN c.disposition = 'ANSWERED' AND c.duration_actual > 0 THEN 1 ELSE 0 END) AS answered,
-                            COALESCE(SUM(CASE WHEN c.disposition = 'ANSWERED' THEN c.duration_actual ELSE 0 END),0) AS seconds
-                     FROM cdrs c
-                     JOIN routing_rules r ON r.carrier_trunk_id = c.carrier_trunk_id AND r.prefix = '*' AND r.status = 'active'
-                     WHERE c.setup_at >= ? AND c.carrier_trunk_id IS NOT NULL
-                     GROUP BY r.routing_plan_id"
-                );
-                $st->execute([$since60]);
-                foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
-                    $pid = (int) $row['plan_id'];
-                    $statsByPlan[$pid] = AsrAcdService::compute((int) $row['attempts'], (int) $row['answered'], (int) $row['seconds']);
-                    $totalAttempts += (int) $statsByPlan[$pid]['attempts'];
-                }
-            }
-        } catch (\Throwable $e) {
-            error_log('[ownswitch] routeHealth stats: ' . $e->getMessage());
+        foreach ($statsByPlan as $s) {
+            $totalAttempts += (int) $s['attempts'];
         }
 
         $out = [];
         $i = 0;
         foreach ($plans as $p) {
             $pid = (int) $p['id'];
-            $s = $statsByPlan[$pid] ?? null;
-            $attempts = (int) ($s['attempts'] ?? 0);
-            $share = $totalAttempts > 0 ? round(100 * $attempts / $totalAttempts, 1) : ($i === 0 ? 100.0 : 0.0);
+            $s = $statsByPlan[$pid] ?? AsrAcdService::compute(0, 0, 0);
+            $attempts = (int) $s['attempts'];
+            $share = $totalAttempts > 0 ? round(100 * $attempts / $totalAttempts, 1) : 0.0;
             $out[] = [
                 'name' => (string) $p['name'],
                 'role' => $i === 0 ? 'PRIMARY' : 'FALLBACK',
                 'status' => (($p['status'] ?? '') === 'active' || ($p['status'] ?? '') === '') ? 'Available' : 'Disabled',
                 'share' => $share,
-                'asr' => $s !== null && $attempts > 0 ? (string) $s['asr'] : '—',
+                'asr' => (string) $s['asr'],
+                'attempts' => $attempts,
+                'answered' => (int) $s['answered'],
             ];
             $i++;
+        }
+        return $out;
+    }
+
+    /**
+     * Last-60-minute ASR per trunk group.
+     * Calls that died before a trunk was chosen still count, via the SIP user's plan,
+     * the matched tariff plan, or the only plan on the switch.
+     *
+     * @param list<int> $planIds
+     * @return array<int,array{attempts:int,answered:int,seconds:int,asr:string,acd:string}>
+     */
+    private function planCallStats(array $planIds): array
+    {
+        $since60 = gmdate('Y-m-d H:i:s', time() - 3600);
+        $buckets = [];
+        foreach ($planIds as $id) {
+            $buckets[$id] = ['attempts' => 0, 'answered' => 0, 'seconds' => 0];
+        }
+        if (!$this->tableExists('cdrs')) {
+            return $this->finishPlanStats($buckets);
+        }
+        try {
+            $trunkPlan = [];
+            if ($this->tableExists('routing_rules')) {
+                foreach ($this->pdo->query(
+                    "SELECT carrier_trunk_id, routing_plan_id FROM routing_rules WHERE status = 'active'"
+                )->fetchAll(PDO::FETCH_ASSOC) ?: [] as $r) {
+                    $trunkPlan[(int) $r['carrier_trunk_id']] = (int) $r['routing_plan_id'];
+                }
+            }
+            $sipPlan = [];
+            if ($this->tableExists('sip_accounts')) {
+                foreach ($this->pdo->query(
+                    'SELECT id, routing_plan_id FROM sip_accounts WHERE routing_plan_id IS NOT NULL AND routing_plan_id > 0'
+                )->fetchAll(PDO::FETCH_ASSOC) ?: [] as $r) {
+                    $sipPlan[(int) $r['id']] = (int) $r['routing_plan_id'];
+                }
+            }
+            $tariffs = [];
+            if ($this->tableExists('rate_plan_tariffs') && $this->tableExists('customers')) {
+                $tariffs = $this->pdo->query(
+                    "SELECT cu.id AS customer_id, t.prefix, t.routing_plan_id
+                     FROM rate_plan_tariffs t
+                     JOIN customers cu ON cu.rate_plan_id = t.rate_plan_id
+                     WHERE t.status = 'active' AND t.routing_plan_id IS NOT NULL AND t.routing_plan_id > 0"
+                )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            }
+            $st = $this->pdo->prepare(
+                'SELECT disposition, duration_actual, carrier_trunk_id, sip_account_id, customer_id, dst_normalized
+                 FROM cdrs WHERE setup_at >= ?'
+            );
+            $st->execute([$since60]);
+            $onlyPlan = count($planIds) === 1 ? $planIds[0] : 0;
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $c) {
+                $plan = 0;
+                $trunk = (int) ($c['carrier_trunk_id'] ?? 0);
+                if ($trunk > 0 && isset($trunkPlan[$trunk])) {
+                    $plan = $trunkPlan[$trunk];
+                }
+                if ($plan <= 0) {
+                    $sip = (int) ($c['sip_account_id'] ?? 0);
+                    $plan = $sipPlan[$sip] ?? 0;
+                }
+                if ($plan <= 0) {
+                    $plan = $this->tariffPlan($tariffs, (int) ($c['customer_id'] ?? 0), (string) ($c['dst_normalized'] ?? ''));
+                }
+                if ($plan <= 0) {
+                    $plan = $onlyPlan;
+                }
+                if ($plan <= 0 || !isset($buckets[$plan])) {
+                    continue;
+                }
+                $buckets[$plan]['attempts']++;
+                $answered = (string) ($c['disposition'] ?? '') === 'ANSWERED' && (int) ($c['duration_actual'] ?? 0) > 0;
+                if ($answered) {
+                    $buckets[$plan]['answered']++;
+                    $buckets[$plan]['seconds'] += (int) $c['duration_actual'];
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] routeHealth stats: ' . $e->getMessage());
+        }
+        return $this->finishPlanStats($buckets);
+    }
+
+    /** @param list<array<string,mixed>> $tariffs */
+    private function tariffPlan(array $tariffs, int $customerId, string $dest): int
+    {
+        $bestLen = -1;
+        $plan = 0;
+        foreach ($tariffs as $t) {
+            if ((int) ($t['customer_id'] ?? 0) !== $customerId) {
+                continue;
+            }
+            $pfx = (string) ($t['prefix'] ?? '');
+            if ($pfx !== '' && str_starts_with($dest, $pfx) && strlen($pfx) > $bestLen) {
+                $bestLen = strlen($pfx);
+                $plan = (int) $t['routing_plan_id'];
+            }
+        }
+        return $plan;
+    }
+
+    /**
+     * @param array<int,array{attempts:int,answered:int,seconds:int}> $buckets
+     * @return array<int,array{attempts:int,answered:int,seconds:int,asr:string,acd:string}>
+     */
+    private function finishPlanStats(array $buckets): array
+    {
+        $out = [];
+        foreach ($buckets as $id => $b) {
+            $out[$id] = AsrAcdService::compute($b['attempts'], $b['answered'], $b['seconds']);
         }
         return $out;
     }

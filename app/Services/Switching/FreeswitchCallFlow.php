@@ -446,9 +446,16 @@ final class FreeswitchCallFlow
     /** Map FreeSWITCH sip_hangup_disposition / hangup cause to caller|callee|system. */
     private function mapHangupInitiator(string $disposition, string $cause): string
     {
+        $c = strtoupper($cause);
+        if (str_contains($c, 'CANCEL')) {
+            return 'caller';
+        }
         $d = strtolower(trim($disposition));
         if ($d !== '') {
-            if (str_contains($d, 'recv_bye') || str_contains($d, 'recv_cancel') || str_contains($d, 'recv_refuse')) {
+            if (str_contains($d, 'recv_cancel')) {
+                return 'caller';
+            }
+            if (str_contains($d, 'recv_bye') || str_contains($d, 'recv_refuse')) {
                 return 'callee';
             }
             if (str_contains($d, 'send_bye') || str_contains($d, 'send_cancel') || str_contains($d, 'send_refuse')) {
