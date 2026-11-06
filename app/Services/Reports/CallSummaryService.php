@@ -23,7 +23,7 @@ final class CallSummaryService
             'bucket' => 'day',
             'dim' => null,
             'staff_only' => false,
-            'blurb' => 'Calls, ASR, ACD, sell/buy and profit grouped by day',
+            'blurb' => 'Attempts, failed, answered, ASR, ACD and duration by day',
         ],
         'summary-day-user' => [
             'title' => 'Summary Day User',
@@ -108,7 +108,7 @@ final class CallSummaryService
             $meta['staff_only'] = false;
         }
 
-        $showCost = $scope->isGlobal();
+        $showCost = $scope->isStaff();
         $select = [];
         $group = [];
         $columns = [];
@@ -130,7 +130,7 @@ final class CallSummaryService
             $group[] = 'dim_label';
             $columns[] = 'User';
         } elseif ($meta['dim'] === 'trunk') {
-            $select[] = "COALESCE(NULLIF(t.name, ''), CONCAT('Trunk #', c.carrier_trunk_id), '(none)') AS dim_label";
+            $select[] = $this->trunkLabelSql() . ' AS dim_label';
             $group[] = 'dim_label';
             $columns[] = 'Trunk';
         } elseif ($meta['dim'] === 'destination') {
@@ -185,7 +185,7 @@ final class CallSummaryService
         $st = $this->pdo->prepare($sql);
         $st->execute([...$tp, $fromUtc, $toUtc]);
         $rows = [];
-        $tot = ['calls' => 0, 'answered' => 0, 'session_time' => 0, 'sell' => '0', 'buy' => '0', 'profit' => '0'];
+        $tot = ['calls' => 0, 'failed' => 0, 'answered' => 0, 'session_time' => 0, 'duration_min' => '0.00', 'sell' => '0', 'buy' => '0', 'profit' => '0'];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $calls = (int) $r['calls'];
             $answered = (int) $r['answered'];
@@ -195,8 +195,10 @@ final class CallSummaryService
                 'bucket' => (string) ($r['bucket'] ?? ''),
                 'dim_label' => (string) ($r['dim_label'] ?? ''),
                 'calls' => $calls,
+                'failed' => max(0, $calls - $answered),
                 'answered' => $answered,
                 'session_time' => $session,
+                'duration_min' => number_format($session / 60, 2, '.', ''),
                 'asr' => $stats['asr'],
                 'acd' => $stats['acd'],
                 'sell' => (string) $r['sell'],
@@ -208,6 +210,7 @@ final class CallSummaryService
             }
             $rows[] = $row;
             $tot['calls'] += $calls;
+            $tot['failed'] += max(0, $calls - $answered);
             $tot['answered'] += $answered;
             $tot['session_time'] += $session;
             $tot['sell'] = bcadd($tot['sell'], (string) $r['sell'], 6);
@@ -217,6 +220,7 @@ final class CallSummaryService
         $totStats = AsrAcdService::compute($tot['calls'], $tot['answered'], $tot['session_time']);
         $tot['asr'] = $totStats['asr'];
         $tot['acd'] = $totStats['acd'];
+        $tot['duration_min'] = number_format(((int) $tot['session_time']) / 60, 2, '.', '');
         if (!$showCost) {
             unset($tot['buy'], $tot['profit']);
         }
@@ -228,5 +232,20 @@ final class CallSummaryService
             'columns' => $columns,
             'meta' => $meta,
         ];
+    }
+
+    /**
+     * Trunk display name. Calls that failed before carrier_trunk_id was stored still
+     * name the gateway from the dialplan line sofia/gateway/gw-N in the SIP trace.
+     */
+    private function trunkLabelSql(): string
+    {
+        return "COALESCE(
+            NULLIF(t.name, ''),
+            (SELECT ct.name FROM carrier_trunks ct
+              WHERE c.sip_trace LIKE CONCAT('%sofia/gateway/gw-', ct.id, '/%')
+              ORDER BY ct.id ASC LIMIT 1),
+            IF(c.carrier_trunk_id IS NULL, NULL, CONCAT('Trunk #', c.carrier_trunk_id)),
+            '(none)')";
     }
 }

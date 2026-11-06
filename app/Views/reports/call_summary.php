@@ -46,9 +46,16 @@ $query = $query ?? ['from' => $from, 'to' => $to];
 
 <div class="os-report-hero os-report-hero--summary mb-3">
     <div class="os-report-hero-stat"><span class="lbl">Calls</span><span class="val"><?= e(number_format((int) ($tot['calls'] ?? 0))) ?></span></div>
+    <div class="os-report-hero-stat"><span class="lbl">Failed</span><span class="val"><?= e(number_format((int) ($tot['failed'] ?? 0))) ?></span></div>
     <div class="os-report-hero-stat"><span class="lbl">Answered</span><span class="val"><?= e(number_format((int) ($tot['answered'] ?? 0))) ?></span></div>
     <div class="os-report-hero-stat"><span class="lbl">ASR</span><span class="val"><?= e((string) ($tot['asr'] ?? '0')) ?>%</span></div>
+    <div class="os-report-hero-stat"><span class="lbl">ACD</span><span class="val"><?= e((string) ($tot['acd'] ?? '0')) ?><span style="font-size:.85rem;opacity:.85"> s</span></span></div>
+    <div class="os-report-hero-stat"><span class="lbl">Duration/Min</span><span class="val"><?= e((string) ($tot['duration_min'] ?? '0.00')) ?></span></div>
     <div class="os-report-hero-stat"><span class="lbl">Sell</span><span class="val" style="font-size:1.1rem"><?= e((string) ($tot['sell'] ?? '0')) ?></span></div>
+    <?php if ($showCost): ?>
+        <div class="os-report-hero-stat"><span class="lbl">Buy</span><span class="val" style="font-size:1.1rem"><?= e((string) ($tot['buy'] ?? '0')) ?></span></div>
+        <div class="os-report-hero-stat"><span class="lbl">Profit</span><span class="val" style="font-size:1.1rem"><?= e((string) ($tot['profit'] ?? '0')) ?></span></div>
+    <?php endif; ?>
 </div>
 <div class="os-table-wrap os-report-card">
 <?php if (($tot['calls'] ?? 0) === 0): ?>
@@ -62,11 +69,12 @@ $query = $query ?? ['from' => $from, 'to' => $to];
             <thead>
             <tr>
                 <?php foreach ($cols as $c): ?><th><?= e($c) ?></th><?php endforeach; ?>
-                <th class="os-num">Session time</th>
-                <th class="os-num">ACD</th>
                 <th class="os-num">Calls</th>
+                <th class="os-num">Failed</th>
                 <th class="os-num">Answered</th>
                 <th class="os-num">ASR %</th>
+                <th class="os-num">ACD</th>
+                <th class="os-num">Duration/Min</th>
                 <th class="os-num">Sell</th>
                 <?php if ($showCost): ?>
                     <th class="os-num">Buy</th>
@@ -83,11 +91,12 @@ $query = $query ?? ['from' => $from, 'to' => $to];
                     <?php if (in_array('User', $cols, true) || in_array('Trunk', $cols, true) || in_array('Destination', $cols, true)): ?>
                         <td><?= e($r['dim_label']) ?></td>
                     <?php endif; ?>
-                    <td class="os-num os-mono"><?= e($r['session_time']) ?></td>
-                    <td class="os-num"><?= e($r['acd']) ?></td>
                     <td class="os-num"><?= e($r['calls']) ?></td>
+                    <td class="os-num"><?= e($r['failed']) ?></td>
                     <td class="os-num"><?= e($r['answered']) ?></td>
                     <td class="os-num"><?= e($r['asr']) ?></td>
+                    <td class="os-num"><?= e($r['acd']) ?></td>
+                    <td class="os-num os-mono"><?= e($r['duration_min']) ?></td>
                     <td class="os-num os-mono"><?= e($r['sell']) ?></td>
                     <?php if ($showCost): ?>
                         <td class="os-num os-mono"><?= e($r['buy']) ?></td>
@@ -99,11 +108,12 @@ $query = $query ?? ['from' => $from, 'to' => $to];
             <tfoot>
             <tr class="table-light fw-semibold">
                 <td<?= count($cols) > 1 ? ' colspan="' . count($cols) . '"' : '' ?>>Total</td>
-                <td class="os-num os-mono"><?= e($tot['session_time']) ?></td>
-                <td class="os-num"><?= e($tot['acd']) ?></td>
                 <td class="os-num"><?= e($tot['calls']) ?></td>
+                <td class="os-num"><?= e($tot['failed']) ?></td>
                 <td class="os-num"><?= e($tot['answered']) ?></td>
                 <td class="os-num"><?= e($tot['asr']) ?></td>
+                <td class="os-num"><?= e($tot['acd']) ?></td>
+                <td class="os-num os-mono"><?= e($tot['duration_min']) ?></td>
                 <td class="os-num os-mono"><?= e($tot['sell']) ?></td>
                 <?php if ($showCost): ?>
                     <td class="os-num os-mono"><?= e($tot['buy']) ?></td>

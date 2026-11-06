@@ -51,7 +51,7 @@ final class CdrController extends BaseController
         return $this->view('cdr/search', [
             'title' => 'Call history',
             'result' => $res, 'f' => $f, 'customers' => $customers, 'carriers' => $carriers,
-            'dispositions' => CdrSearchService::DISPOSITIONS, 'showCost' => $scope->isGlobal(), 'query' => $r->query,
+            'dispositions' => CdrSearchService::DISPOSITIONS, 'showCost' => $scope->isStaff(), 'query' => $r->query,
             'canDelete' => $scope->isStaff() || $scope->isGlobal(),
         ]);
     }
@@ -76,7 +76,7 @@ final class CdrController extends BaseController
         return $this->view('cdr/show', [
             'title' => 'CDR #' . $row['id'],
             'cdr' => $row,
-            'showCost' => $this->scope($r)->isGlobal(),
+            'showCost' => $this->scope($r)->isStaff(),
             'legs' => $legs,
         ]);
     }

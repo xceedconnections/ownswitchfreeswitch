@@ -110,10 +110,14 @@ final class FreeswitchCallFlow
         $inboundCid = $this->inboundCallerId($r);
 
         $bridges = [];
+        $primaryTrunk = null;
         foreach ($trunks as $t) {
             $cidNum = $this->outboundCallerId($account, $t, $inboundCid, $dest);
             if ($this->callerIdLengthReject($account, $t, $cidNum)) {
                 continue; // try next trunk / reject if none remain
+            }
+            if ($primaryTrunk === null) {
+                $primaryTrunk = $t;
             }
             $bridges[] = $this->bridgeLeg($account, $t, $dest, $userFmt, $cidNum);
         }
@@ -179,6 +183,10 @@ final class FreeswitchCallFlow
             . '<action application="set" data="os_sip_user=' . $this->x($userName) . '"/>'
             . '<action application="set" data="os_direction=outbound"/>'
             . '<action application="set" data="os_media_policy=' . $this->x($media) . '"/>'
+            . ($primaryTrunk !== null
+                ? '<action application="set" data="os_carrier_trunk_id=' . (int) $primaryTrunk['id'] . '"/>'
+                    . '<action application="set" data="os_trunk_name=' . $this->x((string) ($primaryTrunk['name'] ?? '')) . '"/>'
+                : '')
             . $dtmfActs
             . $limit
             . $record
@@ -249,10 +257,7 @@ final class FreeswitchCallFlow
             str_contains($cause, 'REJECT') => 'FAILED',
             default => 'FAILED',
         };
-        $trunkId = null;
-        if (preg_match('/gw-(\d+)/', (string) ($vars['last_bridge_to'] ?? $vars['bridge_channel'] ?? $vars['channel_name'] ?? ''), $m)) {
-            $trunkId = (int) $m[1];
-        }
+        $trunkId = $this->trunkIdFromCall($vars, $trace);
         $sipCode = (int) ($vars['sip_term_status'] ?? 0);
         if ($sipCode <= 0) {
             $sipCode = (int) ($vars['sip_invite_failure_status'] ?? 0);
@@ -403,9 +408,18 @@ final class FreeswitchCallFlow
             $merged = trim($prev . "\n\n--- gateway leg ---\n" . $trace);
             $this->db->prepare('UPDATE cdrs SET sip_trace = ? WHERE id = ?')->execute([mb_substr($merged, 0, 60000), $cdrId]);
         }
-        $trunkId = null;
-        if (preg_match('/gw-(\d+)/', (string) ($vars['channel_name'] ?? ''), $m)) {
-            $trunkId = (int) $m[1];
+        $trunkId = $this->trunkIdFromCall($vars, $trace);
+        if ($cdrId > 0 && $trunkId !== null) {
+            try {
+                $this->db->prepare(
+                    'UPDATE cdrs
+                     SET carrier_trunk_id = COALESCE(carrier_trunk_id, ?),
+                         carrier_id = COALESCE(carrier_id, (SELECT carrier_id FROM carrier_trunks WHERE id = ?))
+                     WHERE id = ?'
+                )->execute([$trunkId, $trunkId, $cdrId]);
+            } catch (\Throwable $e) {
+                error_log('[ownswitch] fs cdr trunk: ' . $e->getMessage());
+            }
         }
         $code = (int) ($vars['sip_term_status'] ?? $vars['sip_invite_failure_status'] ?? 0);
         $cause = strtoupper((string) ($vars['hangup_cause'] ?? ''));
@@ -420,20 +434,59 @@ final class FreeswitchCallFlow
         $this->insertAttemptLeg($callId, $cdrId > 0 ? $cdrId : null, $next, $trunkId, $code, $cause, $disp);
     }
 
+    /**
+     * Trunk the call was sent to. A failed or cancelled call often has no bridge channel
+     * variable; the dialplan app log still contains sofia/gateway/gw-N.
+     *
+     * @param array<string,string> $vars
+     */
+    private function trunkIdFromCall(array $vars, string $trace): ?int
+    {
+        $explicit = (int) ($vars['os_carrier_trunk_id'] ?? 0);
+        if ($explicit > 0) {
+            return $explicit;
+        }
+        $blob = implode("\n", [
+            (string) ($vars['last_bridge_to'] ?? ''),
+            (string) ($vars['bridge_channel'] ?? ''),
+            (string) ($vars['channel_name'] ?? ''),
+            $trace,
+        ]);
+        if (preg_match('/sofia\/gateway\/gw-(\d+)/', $blob, $m)) {
+            return (int) $m[1];
+        }
+        if (preg_match('/\bgw-(\d+)\b/', $blob, $m)) {
+            return (int) $m[1];
+        }
+        return null;
+    }
+
     private function insertAttemptLeg(string $callId, ?int $cdrId, int $attempt, ?int $trunkId, int $sipCode, string $reason, string $disp): void
     {
         if ($callId === '') {
             return;
         }
+        $trunkName = null;
+        if ($trunkId !== null && $trunkId > 0) {
+            try {
+                $n = $this->db->prepare('SELECT name FROM carrier_trunks WHERE id = ?');
+                $n->execute([$trunkId]);
+                $found = $n->fetchColumn();
+                $trunkName = is_string($found) && $found !== '' ? $found : null;
+            } catch (\Throwable) {
+                $trunkName = null;
+            }
+        }
         try {
             $this->db->prepare(
                 'INSERT INTO cdr_attempt_legs (sip_call_id, cdr_id, attempt_no, carrier_trunk_id, trunk_name, sip_code, sip_reason, disposition)
-                 VALUES (?, ?, ?, ?, NULL, ?, ?, ?)'
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 mb_substr($callId, 0, 190),
                 $cdrId,
                 $attempt,
                 $trunkId,
+                $trunkName !== null ? mb_substr($trunkName, 0, 120) : null,
                 $sipCode > 0 ? $sipCode : null,
                 mb_substr($reason, 0, 190),
                 mb_substr($disp, 0, 32),

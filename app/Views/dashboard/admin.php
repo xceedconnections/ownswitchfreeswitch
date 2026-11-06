@@ -1,5 +1,5 @@
 <?php
-/** @var array $metrics @var bool $showDemo @var bool $isGlobal @var array $counts */
+/** @var array $metrics @var bool $showDemo @var bool $isGlobal @var bool $isStaff @var array $counts */
 $w = $metrics['window60'];
 $t = $metrics['today'];
 $failed = $metrics['failed24'];
@@ -138,6 +138,30 @@ if ($routeAttempts === 0) {
     </div>
 </div>
 
+<?php if (!empty($isStaff)):
+    $moneyToday = $metrics['moneyToday'] ?? ['buy' => '0', 'sell' => '0', 'profit' => '0'];
+    $moneyMonth = $metrics['moneyMonth'] ?? ['buy' => '0', 'sell' => '0', 'profit' => '0'];
+?>
+<div class="os-dash-grid os-dash-mid mb-3">
+    <div class="os-widget">
+        <div class="os-widget-h"><h2 class="os-widget-title">Today · buying, selling, profit</h2></div>
+        <div class="os-dash-grid" style="grid-template-columns:repeat(3,1fr);gap:.75rem">
+            <div class="os-kpi os-kpi--amber"><div class="lbl">Buying</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyToday['buy'], 4)) ?></div><div class="sub">Carrier cost today</div></div>
+            <div class="os-kpi os-kpi--green"><div class="lbl">Selling</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyToday['sell'], 4)) ?></div><div class="sub">Customer charge today</div></div>
+            <div class="os-kpi os-kpi--teal"><div class="lbl">Profit</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyToday['profit'], 4)) ?></div><div class="sub">Selling − buying</div></div>
+        </div>
+    </div>
+    <div class="os-widget">
+        <div class="os-widget-h"><h2 class="os-widget-title">This month · buying, selling, profit</h2></div>
+        <div class="os-dash-grid" style="grid-template-columns:repeat(3,1fr);gap:.75rem">
+            <div class="os-kpi os-kpi--amber"><div class="lbl">Buying</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyMonth['buy'], 4)) ?></div><div class="sub">Carrier cost this month</div></div>
+            <div class="os-kpi os-kpi--green"><div class="lbl">Selling</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyMonth['sell'], 4)) ?></div><div class="sub">Customer charge this month</div></div>
+            <div class="os-kpi os-kpi--teal"><div class="lbl">Profit</div><div class="val os-mono" style="font-size:1.2rem"><?= e(fmt_money($moneyMonth['profit'], 4)) ?></div><div class="sub">Selling − buying</div></div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <div class="os-dash-grid os-dash-mid mb-3">
     <div class="os-widget">
         <div class="os-widget-h">
@@ -233,9 +257,10 @@ if ($routeAttempts === 0) {
                         <th>Day</th>
                         <th class="os-num">Billed</th>
                         <th class="os-num">Attempted</th>
+                        <th class="os-num">Failed</th>
                         <th class="os-num">Answer %</th>
-                        <th>Billable min</th>
-                        <th class="os-num">Cost</th>
+                        <th>Duration/Min</th>
+                        <th class="os-num">Selling</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -244,6 +269,7 @@ if ($routeAttempts === 0) {
                             <td class="os-mono"><?= e($d['day']) ?></td>
                             <td class="os-num"><?= e(number_format($d['answered'])) ?></td>
                             <td class="os-num"><?= e(number_format($d['attempts'])) ?></td>
+                            <td class="os-num"><?= e(number_format(max(0, $d['attempts'] - $d['answered']))) ?></td>
                             <td class="os-num"><?= e($d['asr']) ?></td>
                             <td>
                                 <div class="d-flex align-items-center gap-2">

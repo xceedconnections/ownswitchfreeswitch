@@ -43,6 +43,8 @@ $acdFmt = static function (string $acd): string {
                 <th class="os-num">Trying</th>
                 <th class="os-num">Ringing</th>
                 <th class="os-num">Connected</th>
+                <th class="os-num">Failed</th>
+                <th class="os-num">Answered</th>
                 <th class="os-num">ASR today</th>
                 <th class="os-num">ACD today</th>
                 <th class="os-num">Attempts</th>
@@ -57,6 +59,8 @@ $acdFmt = static function (string $acd): string {
                     <td class="os-num"><?= e((string) ($row['trying'] ?? 0)) ?></td>
                     <td class="os-num"><?= e((string) ($row['ringing'] ?? 0)) ?></td>
                     <td class="os-num fw-semibold"><?= e((string) ($row['connected'] ?? 0)) ?></td>
+                    <td class="os-num"><?= e((string) max(0, (int) ($row['attempts_today'] ?? 0) - (int) ($row['answered_today'] ?? 0))) ?></td>
+                    <td class="os-num"><?= e((string) ($row['answered_today'] ?? 0)) ?></td>
                     <td class="os-num"><?= e((string) ($row['asr'] ?? '0.00')) ?>%</td>
                     <td class="os-num os-mono"><?= e($acdFmt((string) ($row['acd'] ?? '0'))) ?></td>
                     <td class="os-num text-muted"><?= e((string) ($row['attempts_today'] ?? 0)) ?></td>

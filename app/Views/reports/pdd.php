@@ -4,7 +4,7 @@
 <div class="os-page-head">
     <div>
         <h1 class="os-page-title">PDD Report</h1>
-        <p class="os-page-sub">Post-dial delay: setup → answer (answered calls only)</p>
+        <p class="os-page-sub">Failed and answered calls, ASR, ACD, duration, and post-dial delay on answered calls</p>
     </div>
 </div>
 <form method="get" action="<?= e(url('/reports/pdd')) ?>" class="os-toolbar mb-3">
@@ -15,7 +15,11 @@
     </div>
 </form>
 <div class="os-report-hero os-report-hero--summary mb-3">
+    <div class="os-report-hero-stat"><span class="lbl">Failed</span><span class="val"><?= e(number_format((int) ($res['failed'] ?? 0))) ?></span></div>
     <div class="os-report-hero-stat"><span class="lbl">Answered</span><span class="val"><?= e(number_format((int) $res['answered'])) ?></span></div>
+    <div class="os-report-hero-stat"><span class="lbl">ASR</span><span class="val"><?= e((string) ($res['asr'] ?? '0')) ?>%</span></div>
+    <div class="os-report-hero-stat"><span class="lbl">ACD</span><span class="val"><?= e((string) ($res['acd'] ?? '0')) ?><span style="font-size:.85rem;opacity:.85"> s</span></span></div>
+    <div class="os-report-hero-stat"><span class="lbl">Duration/Min</span><span class="val"><?= e((string) ($res['duration_min'] ?? '0.00')) ?></span></div>
     <div class="os-report-hero-stat"><span class="lbl">Avg PDD</span><span class="val"><?= e($res['avg_pdd_ms']) ?><span style="font-size:.85rem;opacity:.85"> ms</span></span></div>
     <div class="os-report-hero-stat"><span class="lbl">P50</span><span class="val"><?= e($res['p50_ms']) ?><span style="font-size:.85rem;opacity:.85"> ms</span></span></div>
     <div class="os-report-hero-stat"><span class="lbl">P95</span><span class="val"><?= e($res['p95_ms']) ?><span style="font-size:.85rem;opacity:.85"> ms</span></span></div>

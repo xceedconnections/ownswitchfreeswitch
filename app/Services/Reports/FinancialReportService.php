@@ -24,7 +24,7 @@ final class FinancialReportService
      */
     public function summary(TenantScope $scope, string $from, string $to, string $groupBy = 'day', string $tz = 'UTC'): array
     {
-        $showCost = $scope->isGlobal();   // carrier cost/margin are platform-only
+        $showCost = $scope->isStaff();   // buy rate and profit are admin-only
         if (!isset(self::GROUPS[$groupBy]) || (!$showCost && $groupBy === 'carrier')) {
             $groupBy = 'day';
         }
@@ -47,6 +47,8 @@ final class FinancialReportService
             "SELECT {$name} AS label,
                 COALESCE(c.currency, '—') AS currency,
                 COUNT(*) AS calls,
+                SUM(CASE WHEN c.disposition = 'ANSWERED' AND c.duration_actual > 0 THEN 1 ELSE 0 END) AS answered,
+                COALESCE(SUM(CASE WHEN c.disposition = 'ANSWERED' THEN c.duration_actual ELSE 0 END), 0) AS talk_seconds,
                 SUM(CASE WHEN {$billed} THEN 1 ELSE 0 END) AS billed_calls,
                 COALESCE(SUM(CASE WHEN {$billed} THEN c.duration_billable_customer ELSE 0 END), 0) AS billable_seconds,
                 COALESCE(SUM(CASE WHEN {$billed} THEN c.customer_charge ELSE 0 END), 0) AS revenue,
@@ -67,6 +69,9 @@ final class FinancialReportService
 
         $tot = [
             'calls' => '0',
+            'answered' => '0',
+            'failed' => '0',
+            'talk_seconds' => '0',
             'billed_calls' => '0',
             'billable_seconds' => '0',
             'revenue' => '0.000000',
@@ -81,7 +86,17 @@ final class FinancialReportService
             $r['revenue'] = $rev;
             $r['cost'] = $cost;
             $r['margin'] = $margin;
-            $r['calls'] = (string) (int) $r['calls'];
+            $calls = (int) $r['calls'];
+            $answered = (int) $r['answered'];
+            $talk = (int) $r['talk_seconds'];
+            $stats = AsrAcdService::compute($calls, $answered, $talk);
+            $r['calls'] = (string) $calls;
+            $r['answered'] = (string) $answered;
+            $r['failed'] = (string) max(0, $calls - $answered);
+            $r['asr'] = $stats['asr'];
+            $r['acd'] = $stats['acd'];
+            $r['duration_min'] = number_format($talk / 60, 2, '.', '');
+            $r['talk_seconds'] = (string) $talk;
             $r['billed_calls'] = (string) (int) $r['billed_calls'];
             $r['billable_seconds'] = (string) (int) $r['billable_seconds'];
             $r['margin_pct'] = bccomp($rev, '0', 6) > 0
@@ -91,7 +106,10 @@ final class FinancialReportService
             if (!$showCost) {
                 unset($r['cost'], $r['margin'], $r['margin_pct']);
             }
-            $tot['calls'] = (string) ((int) $tot['calls'] + (int) $r['calls']);
+            $tot['calls'] = (string) ((int) $tot['calls'] + $calls);
+            $tot['answered'] = (string) ((int) $tot['answered'] + $answered);
+            $tot['failed'] = (string) ((int) $tot['failed'] + max(0, $calls - $answered));
+            $tot['talk_seconds'] = (string) ((int) $tot['talk_seconds'] + $talk);
             $tot['billed_calls'] = (string) ((int) $tot['billed_calls'] + (int) $r['billed_calls']);
             $tot['billable_seconds'] = (string) ((int) $tot['billable_seconds'] + (int) $r['billable_seconds']);
             $tot['revenue'] = bcadd($tot['revenue'], $rev, 6);
@@ -100,6 +118,10 @@ final class FinancialReportService
         }
         unset($r);
 
+        $totStats = AsrAcdService::compute((int) $tot['calls'], (int) $tot['answered'], (int) $tot['talk_seconds']);
+        $tot['asr'] = $totStats['asr'];
+        $tot['acd'] = $totStats['acd'];
+        $tot['duration_min'] = number_format(((int) $tot['talk_seconds']) / 60, 2, '.', '');
         $tot['margin'] = bcsub($tot['revenue'], $tot['cost'], 6);
         $tot['currencies'] = implode(',', array_keys($currencies));
         $tot['margin_pct'] = bccomp($tot['revenue'], '0', 6) > 0

@@ -134,7 +134,7 @@ final class CdrSearchService
         unset($r);
 
         // Customers must never see carrier-side cost/margin.
-        if (!$scope->isGlobal()) {
+        if (!$scope->isStaff()) {
             foreach ($rows as &$r) {
                 foreach (['carrier_cost', 'carrier_rate', 'carrier_connect_fee', 'gross_margin', 'carrier_id', 'carrier_name', 'carrier_trunk_id', 'carrier_initial', 'carrier_subsequent', 'duration_billable_carrier', 'trunk_name'] as $k) {
                     unset($r[$k]);
@@ -170,7 +170,7 @@ final class CdrSearchService
         if ($row['area_description'] === null && ($dn !== '' || $rawDn !== '')) {
             $row['area_description'] = $this->areaNameOne($dn !== '' ? $dn : $rawDn);
         }
-        if (!$scope->isGlobal()) {
+        if (!$scope->isStaff()) {
             foreach (['carrier_cost', 'carrier_rate', 'carrier_connect_fee', 'gross_margin', 'carrier_id', 'carrier_name', 'carrier_trunk_id', 'carrier_initial', 'carrier_subsequent', 'duration_billable_carrier', 'cgrates_cost', 'rating_discrepancy', 'trunk_name'] as $k) {
                 unset($row[$k]);
             }
@@ -278,7 +278,7 @@ final class CdrSearchService
     {
         $tz = \Ownswitch\Support\Timezone::normalize(is_string($filters['tz'] ?? null) ? (string) $filters['tz'] : 'UTC');
         $hdr = ['id', 'setup_at_' . $tz, 'src', 'dst', 'disposition', 'sip_code', 'sip_code_label', 'duration_s', 'billable_s', 'rate', 'increment', 'charge', 'currency'];
-        $staff = $scope->isGlobal();
+        $staff = $scope->isStaff();
         if ($staff) {
             array_push($hdr, 'carrier', 'carrier_cost', 'margin');
         }

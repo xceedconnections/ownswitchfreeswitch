@@ -68,7 +68,7 @@ final class ReportController extends BaseController
             'from' => $from,
             'to' => $to,
             'group' => $group,
-            'canCarrier' => $this->scope($r)->isGlobal(),
+            'canCarrier' => $this->scope($r)->isStaff(),
             'result' => $result,
             'query' => $query,
         ]);
@@ -90,13 +90,38 @@ final class ReportController extends BaseController
         $scope = $this->scope($r);
         [$tw, $tp] = $scope->where('owned', 'c');
         $res = [
+            'attempts' => 0,
+            'failed' => 0,
             'answered' => 0,
+            'asr' => '0.00',
+            'acd' => '0.0',
+            'duration_min' => '0.00',
             'avg_pdd_ms' => '0',
             'p50_ms' => '0',
             'p95_ms' => '0',
             'rows' => [],
         ];
         try {
+            $all = $this->db()->prepare(
+                "SELECT COUNT(*) AS attempts,
+                        SUM(CASE WHEN c.disposition = 'ANSWERED' AND c.duration_actual > 0 THEN 1 ELSE 0 END) AS answered,
+                        COALESCE(SUM(CASE WHEN c.disposition = 'ANSWERED' THEN c.duration_actual ELSE 0 END), 0) AS seconds
+                 FROM cdrs c
+                 WHERE ({$tw}) AND c.setup_at >= ? AND c.setup_at < ?"
+            );
+            $all->execute([...$tp, $fromTs, $toTs]);
+            $aggAll = $all->fetch(\PDO::FETCH_ASSOC) ?: [];
+            $attempts = (int) ($aggAll['attempts'] ?? 0);
+            $answeredAll = (int) ($aggAll['answered'] ?? 0);
+            $seconds = (int) ($aggAll['seconds'] ?? 0);
+            $stats = \Ownswitch\Services\Reports\AsrAcdService::compute($attempts, $answeredAll, $seconds);
+            $res['attempts'] = $attempts;
+            $res['answered'] = $answeredAll;
+            $res['failed'] = max(0, $attempts - $answeredAll);
+            $res['asr'] = $stats['asr'];
+            $res['acd'] = $stats['acd'];
+            $res['duration_min'] = number_format($seconds / 60, 2, '.', '');
+
             $st = $this->db()->prepare(
                 "SELECT COUNT(*) AS answered,
                         ROUND(AVG(TIMESTAMPDIFF(MICROSECOND, c.setup_at, c.answer_at) / 1000), 1) AS avg_pdd_ms
@@ -106,7 +131,6 @@ final class ReportController extends BaseController
             );
             $st->execute([...$tp, $fromTs, $toTs]);
             $agg = $st->fetch(\PDO::FETCH_ASSOC) ?: [];
-            $res['answered'] = (int) ($agg['answered'] ?? 0);
             $res['avg_pdd_ms'] = (string) ($agg['avg_pdd_ms'] ?? '0');
 
             $samples = $this->db()->prepare(
@@ -126,7 +150,7 @@ final class ReportController extends BaseController
             }
 
             $byTrunk = $this->db()->prepare(
-                "SELECT COALESCE(NULLIF(t.name, ''), CONCAT('Trunk #', c.carrier_trunk_id), '(none)') AS label,
+                "SELECT COALESCE(NULLIF(t.name, ''), (SELECT ct.name FROM carrier_trunks ct WHERE c.sip_trace LIKE CONCAT('%sofia/gateway/gw-', ct.id, '/%') ORDER BY ct.id ASC LIMIT 1), '(none)') AS label,
                         COUNT(*) AS answered,
                         ROUND(AVG(TIMESTAMPDIFF(MICROSECOND, c.setup_at, c.answer_at) / 1000), 1) AS avg_pdd_ms
                  FROM cdrs c
@@ -212,6 +236,7 @@ final class ReportController extends BaseController
             'focus' => $focus,
             'counts' => $counts,
             'query' => $query,
+            'showCost' => $scope->isStaff(),
         ]);
     }
 

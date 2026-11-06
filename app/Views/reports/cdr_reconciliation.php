@@ -1,5 +1,6 @@
 <?php
-/** @var array $result @var string $from @var string $to @var string $focus @var array $counts @var array $query */
+/** @var array $result @var string $from @var string $to @var string $focus @var array $counts @var array $query @var bool $showCost */
+$showCost = !empty($showCost);
 ?>
 <div class="os-page-head">
     <div>
@@ -33,7 +34,7 @@
     <div class="os-empty"><div class="os-empty-title">Clean</div><div>No reconciliation issues in this range.</div></div>
 <?php else: ?>
     <div class="table-responsive"><table class="table table-sm table-hover mb-0 os-table">
-        <thead><tr><th>ID</th><th>Setup</th><th>Disposition</th><th>Settlement</th><th>Disc.</th><th class="os-num">Sell</th><th class="os-num">Buy</th><th></th></tr></thead>
+        <thead><tr><th>ID</th><th>Setup</th><th>Disposition</th><th>Settlement</th><th>Disc.</th><th class="os-num">Sell</th><?php if ($showCost): ?><th class="os-num">Buy</th><?php endif; ?><th></th></tr></thead>
         <tbody>
         <?php foreach ($result['rows'] as $row): ?>
             <tr>
@@ -43,7 +44,7 @@
                 <td class="os-mono"><?= e((string) $row['settlement_status']) ?></td>
                 <td><?= !empty($row['rating_discrepancy']) ? 'Yes' : '—' ?></td>
                 <td class="os-num os-mono"><?= e((string) ($row['customer_charge'] ?? '0')) ?></td>
-                <td class="os-num os-mono"><?= e((string) ($row['carrier_cost'] ?? '0')) ?></td>
+                <?php if ($showCost): ?><td class="os-num os-mono"><?= e((string) ($row['carrier_cost'] ?? '0')) ?></td><?php endif; ?>
                 <td><a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/cdrs/' . (int) $row['id'])) ?>">View</a></td>
             </tr>
         <?php endforeach; ?>

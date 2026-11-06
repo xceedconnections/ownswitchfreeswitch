@@ -31,6 +31,8 @@ final class DashboardMetricsService
             'failed24' => ['total' => 0, 'attempts' => 0, 'pct' => '0', 'reasons' => []],
             'routes' => [],
             'trunk_groups' => 0,
+            'moneyToday' => ['buy' => '0', 'sell' => '0', 'profit' => '0'],
+            'moneyMonth' => ['buy' => '0', 'sell' => '0', 'profit' => '0'],
         ];
     }
 
@@ -61,6 +63,7 @@ final class DashboardMetricsService
             }
             $agg7 = $this->aggregate($tw, $tp, $since7);
             $since30 = gmdate('Y-m-d 00:00:00', strtotime('-29 days'));
+            $monthStart = gmdate('Y-m-01 00:00:00');
 
             return [
                 'window60' => $window60,
@@ -75,6 +78,8 @@ final class DashboardMetricsService
                 'failed24' => $this->failedBreakdown($tw, $tp, $since24),
                 'routes' => $this->routeHealth($scope),
                 'trunk_groups' => $this->trunkGroupCount($scope),
+                'moneyToday' => $this->money($tw, $tp, $todayStart),
+                'moneyMonth' => $this->money($tw, $tp, $monthStart),
             ];
         } catch (\Throwable $e) {
             error_log('[ownswitch] dashboard metrics: ' . $e->getMessage());
@@ -100,6 +105,34 @@ final class DashboardMetricsService
         $r = $st->fetch(PDO::FETCH_ASSOC) ?: [];
         $stats = AsrAcdService::compute((int) ($r['attempts'] ?? 0), (int) ($r['answered'] ?? 0), (int) ($r['seconds'] ?? 0));
         return $stats + ['spend' => (string) ($r['spend'] ?? '0')];
+    }
+
+    /** @return array{buy:string,sell:string,profit:string} */
+    private function money(string $tw, array $tp, string $from, ?string $to = null): array
+    {
+        $zero = ['buy' => '0', 'sell' => '0', 'profit' => '0'];
+        try {
+            $sql = "SELECT COALESCE(SUM(c.carrier_cost),0) AS buy,
+                    COALESCE(SUM(c.customer_charge),0) AS sell,
+                    COALESCE(SUM(c.gross_margin),0) AS profit
+                    FROM cdrs c WHERE ({$tw}) AND c.setup_at >= ?";
+            $params = [...$tp, $from];
+            if ($to !== null) {
+                $sql .= ' AND c.setup_at < ?';
+                $params[] = $to;
+            }
+            $st = $this->pdo->prepare($sql);
+            $st->execute($params);
+            $r = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+            return [
+                'buy' => (string) ($r['buy'] ?? '0'),
+                'sell' => (string) ($r['sell'] ?? '0'),
+                'profit' => (string) ($r['profit'] ?? '0'),
+            ];
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] dashboard money: ' . $e->getMessage());
+            return $zero;
+        }
     }
 
     private function countAttempts(string $tw, array $tp, string $from): int
