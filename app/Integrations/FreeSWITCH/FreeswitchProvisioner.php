@@ -308,24 +308,29 @@ final class FreeswitchProvisioner
         if (!filter_var($ip, FILTER_VALIDATE_IP)) {
             return null;
         }
+        $hits = [];
         foreach ($this->registeredContacts() as $user => $row) {
-            if (($row['received'] ?? '') === $ip) {
-                return $user;
+            if (($row['received'] ?? '') === $ip || str_contains((string) ($row['contact'] ?? ''), $ip)) {
+                $hits[] = $user;
             }
-            if (str_contains((string) ($row['contact'] ?? ''), $ip)) {
-                return $user;
-            }
+        }
+        $hits = array_values(array_unique($hits));
+        if (count($hits) === 1) {
+            return $hits[0];
+        }
+        if ($hits !== []) {
+            return null;
         }
         try {
             $st = App::db()->prepare(
                 "SELECT username FROM sip_accounts
-                 WHERE status = 'active'
+                 WHERE status = 'active' AND connection_mode = 'ip'
                    AND (sip_host = ? OR FIND_IN_SET(?, sip_host) > 0)
-                 LIMIT 1"
+                 LIMIT 2"
             );
             $st->execute([$ip, $ip]);
-            $u = $st->fetchColumn();
-            return is_string($u) && $u !== '' ? $u : null;
+            $names = $st->fetchAll(\PDO::FETCH_COLUMN) ?: [];
+            return count($names) === 1 && is_string($names[0]) ? $names[0] : null;
         } catch (\Throwable) {
             return null;
         }

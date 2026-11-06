@@ -39,9 +39,11 @@ final class FreeswitchCallFlow
 
         $rawDest = (string) $r->input('Caller-Destination-Number', '');
         $dest = Destination::normalize($rawDest);
-        $user = $this->sipUserFromRequest($r);
+        $authUser = $this->authUsername($r);
+        // Authorization username identifies the account. From / caller ID must not steal it.
+        $user = $authUser !== '' ? $authUser : $this->sipUserFromRequest($r);
         $ip = (string) $r->input('variable_sip_network_ip', $r->input('network_addr', $r->input('ip', '')));
-        $account = $this->findAccount($user, $ip);
+        $account = $this->findAccount($user, $ip, $authUser !== '');
         $didUser = $dest !== '' ? $this->didOwner($dest) : null;
 
         if ($didUser !== null && ($account === null || strcasecmp((string) $account['username'], $didUser) !== 0)) {
@@ -800,8 +802,11 @@ final class FreeswitchCallFlow
         return (float) ($rate['rate'] ?? 0) > (float) $cap;
     }
 
-    /** @return array<string,mixed>|null */
-    private function findAccount(string $user, string $ip): ?array
+    /**
+     * @return array<string,mixed>|null
+     * @param bool $authLocked digest username was present — never fall through to another account on the same IP
+     */
+    private function findAccount(string $user, string $ip, bool $authLocked = false): ?array
     {
         if ($user !== '') {
             $st = $this->db->prepare("SELECT * FROM sip_accounts WHERE username = ? AND status = 'active' LIMIT 1");
@@ -810,47 +815,46 @@ final class FreeswitchCallFlow
             if ($row) {
                 return $row;
             }
+            if ($authLocked) {
+                return null;
+            }
         }
-        if (filter_var($ip, FILTER_VALIDATE_IP)) {
-            // Exact single-IP rows + FIND_IN_SET for multi-IP sip_host lists.
-            $st = $this->db->prepare(
-                "SELECT * FROM sip_accounts
-                 WHERE status = 'active' AND connection_mode = 'ip'
-                   AND (sip_host = ? OR FIND_IN_SET(?, sip_host) > 0)
-                 LIMIT 1"
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            return null;
+        }
+        $matches = [];
+        try {
+            $st = $this->db->query(
+                "SELECT * FROM sip_accounts WHERE status = 'active' AND connection_mode = 'ip'"
             );
-            $st->execute([$ip, $ip]);
-            $row = $st->fetch(PDO::FETCH_ASSOC);
-            if ($row) {
-                return $row;
-            }
-            // Fallback scan (handles legacy spaces / odd separators).
-            try {
-                $st = $this->db->query(
-                    "SELECT * FROM sip_accounts WHERE status = 'active' AND connection_mode = 'ip'"
-                );
-                foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $cand) {
-                    if (SipHosts::matches((string) ($cand['sip_host'] ?? ''), $ip)) {
-                        return $cand;
-                    }
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $cand) {
+                if (SipHosts::matches((string) ($cand['sip_host'] ?? ''), $ip)) {
+                    $matches[] = $cand;
                 }
-            } catch (\Throwable) {
             }
-            try {
-                $st = $this->db->prepare(
-                    "SELECT s.* FROM ip_endpoints e
-                     JOIN sip_accounts s ON s.customer_id = e.customer_id AND s.status = 'active'
-                     WHERE e.status = 'active' AND e.ip_address = ?
-                     ORDER BY (s.connection_mode = 'ip') DESC, s.id ASC
-                     LIMIT 1"
-                );
-                $st->execute([$ip]);
-                $row = $st->fetch(PDO::FETCH_ASSOC);
-                if ($row) {
-                    return $row;
-                }
-            } catch (\Throwable) {
+        } catch (\Throwable) {
+        }
+        // One IP, several peers: do not guess. They must authenticate by username.
+        if (count($matches) === 1) {
+            return $matches[0];
+        }
+        if ($matches !== []) {
+            return null;
+        }
+        try {
+            $st = $this->db->prepare(
+                "SELECT s.* FROM ip_endpoints e
+                 JOIN sip_accounts s ON s.customer_id = e.customer_id AND s.status = 'active'
+                 WHERE e.status = 'active' AND e.ip_address = ?
+                 ORDER BY s.id ASC
+                 LIMIT 2"
+            );
+            $st->execute([$ip]);
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            if (count($rows) === 1) {
+                return $rows[0];
             }
+        } catch (\Throwable) {
         }
         return null;
     }
@@ -902,9 +906,19 @@ final class FreeswitchCallFlow
         return (int) ($auth['max_seconds'] ?? 0);
     }
 
+    /** Digest Authorization username, without the realm. */
+    private function authUsername(Request $r): string
+    {
+        $v = trim((string) $r->input('variable_sip_auth_username', $r->input('sip_auth_username', '')));
+        if ($v === '') {
+            return '';
+        }
+        return str_contains($v, '@') ? explode('@', $v, 2)[0] : $v;
+    }
+
     private function sipUserFromRequest(Request $r): string
     {
-        foreach (['variable_os_sip_user', 'Caller-Username', 'variable_sip_auth_username', 'Hunt-Username', 'user'] as $k) {
+        foreach (['variable_sip_auth_username', 'variable_os_sip_user', 'Caller-Username', 'Hunt-Username', 'user'] as $k) {
             $v = trim((string) $r->input($k, ''));
             if ($v !== '' && !str_contains($v, '@')) {
                 return $v;

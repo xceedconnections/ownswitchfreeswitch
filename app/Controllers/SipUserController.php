@@ -235,7 +235,7 @@ final class SipUserController extends CrudController
                 'type' => 'select',
                 'options' => SipPeerOptions::CONNECTION_MODE,
                 'default' => 'dynamic',
-                'help' => 'Dynamic = username/password REGISTER to FreeSWITCH. IP based = fixed IP peer (no digest); Host IP + port update the firewall automatically.',
+                'help' => 'Dynamic = username/password. Several users may share one server IP (ViciDial carriers); the switch matches the Authorization username, not the source IP. IP based = one fixed IP and no password. Do not put the same IP on more than one IP-based user.',
                 'section' => 'Network',
             ],
             [

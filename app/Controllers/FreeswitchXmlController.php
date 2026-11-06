@@ -60,7 +60,12 @@ final class FreeswitchXmlController
 
     private function directory(Request $r): string
     {
-        $user = trim((string) ($r->input('user', $r->input('sip_auth_username', $r->input('Hunt-Username', '')))));
+        // Digest username wins over From / Request-URI (Asterisk match_auth_username=yes).
+        // Vicidial sends many carriers from one IP; each Authorization username is a different account.
+        $authUser = trim((string) $r->input('sip_auth_username', ''));
+        $user = $authUser !== ''
+            ? $authUser
+            : trim((string) ($r->input('user', $r->input('Hunt-Username', ''))));
         $domain = trim((string) ($r->input('domain', $r->input('sip_auth_realm', ''))));
         // FreeSWITCH often sends domain as key_value (tag_name=domain, key_name=name).
         if ($domain === '') {
@@ -95,9 +100,10 @@ final class FreeswitchXmlController
             return $this->notFound();
         }
 
+        $sharedIps = $this->sharedIpAuthHosts($rows);
         $usersXml = '';
         foreach ($rows as $row) {
-            $usersXml .= $this->directoryUserXml($row, $domain);
+            $usersXml .= $this->directoryUserXml($row, $domain, $sharedIps);
         }
         if ($usersXml === '') {
             return $this->notFound();
@@ -119,16 +125,54 @@ final class FreeswitchXmlController
             . "</document>\n";
     }
 
-    /** @param array<string,mixed> $row */
-    private function directoryUserXml(array $row, string $domain): string
+    /**
+     * IPs listed on more than one IP-auth account. Sofia matches cidr before digest,
+     * so a shared IP must not be pinned to the first peer.
+     *
+     * @param list<array<string,mixed>> $rows
+     * @return array<string,true>
+     */
+    private function sharedIpAuthHosts(array $rows): array
+    {
+        $counts = [];
+        foreach ($rows as $row) {
+            if (strtolower((string) ($row['connection_mode'] ?? '')) !== 'ip') {
+                continue;
+            }
+            foreach (SipHosts::parse((string) ($row['sip_host'] ?? '')) as $ip) {
+                $counts[$ip] = ($counts[$ip] ?? 0) + 1;
+            }
+        }
+        $shared = [];
+        foreach ($counts as $ip => $n) {
+            if ($n > 1) {
+                $shared[$ip] = true;
+            }
+        }
+        return $shared;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @param array<string,true> $sharedIps
+     */
+    private function directoryUserXml(array $row, string $domain, array $sharedIps = []): string
     {
         $user = (string) ($row['username'] ?? '');
         if ($user === '') {
             return '';
         }
         $mode = strtolower((string) ($row['connection_mode'] ?? 'dynamic'));
-        $cidr = SipHosts::cidrParam((string) ($row['sip_host'] ?? ''));
+        $ips = SipHosts::parse((string) ($row['sip_host'] ?? ''));
+        $uniqueIps = [];
+        foreach ($ips as $ip) {
+            if (!isset($sharedIps[$ip])) {
+                $uniqueIps[] = $ip;
+            }
+        }
+        $cidr = $uniqueIps === [] ? '' : SipHosts::cidrParam(implode(',', $uniqueIps));
         $params = '';
+        // Username/password accounts never match by source IP. Same Vicidial server can host many users.
         if ($mode === 'ip' && $cidr !== '') {
             $params .= "          <param name=\"cidr\" value=\"" . $this->x($cidr) . "\"/>\n"
                 . "          <param name=\"allow-empty-password\" value=\"true\"/>\n";
