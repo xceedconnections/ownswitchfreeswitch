@@ -16,7 +16,7 @@ final class CdrController extends BaseController
     {
         [$from, $to] = $this->dateRange($r, 1);
         $f = ['from' => $from, 'to' => $to, 'tz' => $this->userTimezone($r)];
-        foreach (['customer_id', 'carrier_id', 'src', 'dst', 'disposition', 'min_duration', 'failed_only', 'from', 'to'] as $k) {
+        foreach (['customer_id', 'carrier_id', 'src', 'dst', 'disposition', 'min_duration', 'from', 'to'] as $k) {
             $v = $r->query($k);
             if (!is_string($v) || $v === '') {
                 $v = $r->input($k, null);
@@ -48,12 +48,10 @@ final class CdrController extends BaseController
                 $carriers[$c['id']] = $c['name'];
             }
         }
-        $failedOnly = ($f['failed_only'] ?? '') === '1';
         return $this->view('cdr/search', [
-            'title' => $failedOnly ? 'Failed CDRs' : 'CDR Search',
+            'title' => 'Call history',
             'result' => $res, 'f' => $f, 'customers' => $customers, 'carriers' => $carriers,
             'dispositions' => CdrSearchService::DISPOSITIONS, 'showCost' => $scope->isGlobal(), 'query' => $r->query,
-            'failedOnly' => $failedOnly,
             'canDelete' => $scope->isStaff() || $scope->isGlobal(),
         ]);
     }

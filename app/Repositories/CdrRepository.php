@@ -18,7 +18,7 @@ final class CdrRepository extends BaseRepository
         'customer_rate', 'carrier_rate', 'customer_initial', 'customer_subsequent', 'carrier_initial', 'carrier_subsequent',
         'customer_charge', 'carrier_cost', 'customer_connect_fee', 'carrier_connect_fee', 'gross_margin',
         'customer_rate_plan_version_id', 'carrier_tariff_version_id', 'sip_response', 'disposition',
-        'direction', 'hangup_initiator', 'hangup_cause', 'failure_reason',
+        'direction', 'hangup_initiator', 'hangup_cause', 'failure_reason', 'sip_trace',
         'source_ip', 'media_ip',
         'media_policy_requested', 'media_policy_actual', 'recording_status', 'fraud_status', 'fraud_event_id',
         'settlement_status', 'rating_source', 'rated_at', 'rating_discrepancy', 'cgrates_cost', 'currency', 'is_demo',

@@ -68,9 +68,16 @@ if ($showCost) {
     <?php endforeach; ?>
 </table></div>
 
-<?php if ($legs !== []): ?>
+<?php
+$sipTrace = trim((string) ($cdr['sip_trace'] ?? ''));
+if ($sipTrace !== '' || $legs !== []):
+?>
 <div class="os-panel col-12 overflow-hidden mt-3" id="sip-trace">
-    <div class="px-3 py-2 border-bottom fw-semibold"><i class="bi bi-diagram-3 me-1"></i>SIP failover trace</div>
+    <div class="px-3 py-2 border-bottom fw-semibold"><i class="bi bi-diagram-3 me-1"></i>SIP trace</div>
+    <?php if ($sipTrace !== ''): ?>
+        <pre class="mb-0 px-3 py-2 small os-mono" style="white-space:pre-wrap;max-height:28rem;overflow:auto"><?= e($sipTrace) ?></pre>
+    <?php endif; ?>
+    <?php if ($legs !== []): ?>
     <table class="table table-sm mb-0 os-table">
         <thead><tr><th>#</th><th>Trunk</th><th>Code</th><th>Disposition</th><th>Reason</th><th>Media</th></tr></thead>
         <tbody>
@@ -86,6 +93,7 @@ if ($showCost) {
         <?php endforeach; ?>
         </tbody>
     </table>
+    <?php endif; ?>
 </div>
 <?php endif; ?>
 

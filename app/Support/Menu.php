@@ -58,7 +58,6 @@ final class Menu
             ]],
             ['Reports', [
                 ['CDR', '/cdrs', self::ALL],
-                ['CDR Failed', '/reports/cdr-failed', self::ALL],
                 ['CDR Reconciliation', '/reports/cdr-reconciliation', self::FINANCE],
                 ['Summary per Day', '/reports/summary-day', self::ALL],
                 ['Summary Day User', '/reports/summary-day-user', self::ALL],

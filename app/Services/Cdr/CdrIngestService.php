@@ -73,6 +73,7 @@ final class CdrIngestService
             'hangup_initiator' => $d['hangup_initiator'] ?? null,
             'hangup_cause' => $d['hangup_cause'] ?? null,
             'failure_reason' => $d['failure_reason'],
+            'sip_trace' => $d['sip_trace'] ?? null,
             'source_ip' => $d['source_ip'] ?? null,
             'media_ip' => $this->resolveMediaIp($d),
             'media_policy_requested' => $d['media_policy_requested'], 'media_policy_actual' => $d['media_policy_actual'],
@@ -199,6 +200,7 @@ final class CdrIngestService
             'direction' => $str($raw['direction'] ?? null, 16),
             'hangup_initiator' => $str($raw['hangup_initiator'] ?? null, 32),
             'hangup_cause' => $str($raw['hangup_cause'] ?? null, 64),
+            'sip_trace' => $str($raw['sip_trace'] ?? null, 60000),
         ], []];
     }
 

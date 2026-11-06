@@ -1,6 +1,5 @@
 <?php
-/** @var array $result @var array $f @var array $customers @var array $carriers @var list<string> $dispositions @var bool $showCost @var array $query @var bool $failedOnly @var bool $canDelete */
-$failedOnly = !empty($failedOnly);
+/** @var array $result @var array $f @var array $customers @var array $carriers @var list<string> $dispositions @var bool $showCost @var array $query @var bool $canDelete */
 $canDelete = !empty($canDelete);
 $exportBase = array_filter($f, static fn ($v) => is_string($v) || is_int($v));
 $csvQs = http_build_query($exportBase);
@@ -8,8 +7,8 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
 ?>
 <div class="os-page-head">
     <div>
-        <h1 class="os-page-title"><?= $failedOnly ? 'Failed CDRs' : 'CDR Search' ?> <span class="os-count"><?= e($result['total']) ?></span></h1>
-        <p class="os-page-sub"><?= $failedOnly ? 'Non-answered calls (busy, cancel, fail, no answer)' : 'Filter, export, and manage call detail records' ?> · times in <?= e(tz_label()) ?></p>
+        <h1 class="os-page-title">Call history <span class="os-count"><?= e($result['total']) ?></span></h1>
+        <p class="os-page-sub">Answered, cancelled, busy, and failed calls · times in <?= e(tz_label()) ?></p>
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/cdrs/export' . ($csvQs !== '' ? '?' . $csvQs : ''))) ?>"><i class="bi bi-download me-1"></i>CSV</a>
@@ -19,11 +18,10 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
 <div class="os-report-hero os-report-hero--cdr mb-3">
     <div class="os-report-hero-stat"><span class="lbl">Results</span><span class="val"><?= e(number_format((int) $result['total'])) ?></span></div>
     <div class="os-report-hero-stat"><span class="lbl">Period</span><span class="val" style="font-size:1rem"><?= e(($f['from'] ?? '') . ' → ' . ($f['to'] ?? '')) ?></span></div>
-    <div class="os-report-hero-stat"><span class="lbl">View</span><span class="val" style="font-size:1rem"><?= $failedOnly ? 'Failed' : 'All CDRs' ?></span></div>
+    <div class="os-report-hero-stat"><span class="lbl">View</span><span class="val" style="font-size:1rem">All calls</span></div>
 </div>
 
 <form method="get" action="<?= e(url('/cdrs')) ?>" class="os-toolbar mb-3">
-    <?php if ($failedOnly): ?><input type="hidden" name="failed_only" value="1"><?php endif; ?>
     <div class="row g-2">
         <div class="col-6 col-md-2"><label class="form-label small mb-0" for="from">From</label><input type="date" class="form-control form-control-sm" id="from" name="from" value="<?= e($f['from']) ?>"></div>
         <div class="col-6 col-md-2"><label class="form-label small mb-0" for="to">To</label><input type="date" class="form-control form-control-sm" id="to" name="to" value="<?= e($f['to']) ?>"></div>
@@ -41,12 +39,10 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
         <?php endif; ?>
         <div class="col-6 col-md-2"><label class="form-label small mb-0" for="src">CallerID</label><input class="form-control form-control-sm" id="src" name="src" value="<?= e($f['src'] ?? '') ?>" maxlength="64"></div>
         <div class="col-6 col-md-2"><label class="form-label small mb-0" for="dst">Destination prefix</label><input class="form-control form-control-sm" id="dst" name="dst" value="<?= e($f['dst'] ?? '') ?>" maxlength="30"></div>
-        <?php if (!$failedOnly): ?>
         <div class="col-6 col-md-2"><label class="form-label small mb-0" for="disposition">Disposition</label>
             <select class="form-select form-select-sm" id="disposition" name="disposition"><option value="">All</option>
                 <?php foreach ($dispositions as $d): ?><option value="<?= e($d) ?>"<?= ($f['disposition'] ?? '') === $d ? ' selected' : '' ?>><?= e($d) ?></option><?php endforeach; ?>
             </select></div>
-        <?php endif; ?>
         <div class="col-6 col-md-2"><label class="form-label small mb-0" for="min_duration">Min duration (s)</label><input class="form-control form-control-sm" id="min_duration" name="min_duration" value="<?= e($f['min_duration'] ?? '') ?>" inputmode="numeric" maxlength="7"></div>
         <div class="col-auto align-self-end"><button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-funnel me-1"></i>Search</button></div>
     </div>
@@ -97,7 +93,7 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
                 <td><a href="<?= e(url('/cdrs/' . (int) $c['id'])) ?>" class="os-mono"><?= e($c['id']) ?></a><?= !empty($c['is_demo']) ? ' <span class="badge text-bg-warning">DEMO</span>' : '' ?></td>
                 <td>
                     <?php if (!empty($c['has_sip_trace'])): ?>
-                        <a href="<?= e(url('/cdrs/' . (int) $c['id'])) ?>#sip-trace" class="text-decoration-none" title="SIP failover trace">
+                        <a href="<?= e(url('/cdrs/' . (int) $c['id'])) ?>#sip-trace" class="text-decoration-none" title="SIP trace">
                             <i class="bi bi-diagram-3"></i>
                         </a>
                     <?php else: ?>

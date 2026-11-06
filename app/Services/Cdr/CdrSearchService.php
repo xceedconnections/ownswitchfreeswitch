@@ -66,8 +66,6 @@ final class CdrSearchService
         if (!empty($f['disposition']) && in_array($f['disposition'], self::DISPOSITIONS, true)) {
             $w[] = 'c.disposition = ?';
             $params[] = $f['disposition'];
-        } elseif (!empty($f['failed_only']) && (string) $f['failed_only'] === '1') {
-            $w[] = "c.disposition <> 'ANSWERED'";
         }
         if (isset($f['min_duration']) && ctype_digit((string) $f['min_duration']) && $f['min_duration'] !== '') {
             $w[] = 'c.duration_actual >= ?';
@@ -125,7 +123,7 @@ final class CdrSearchService
         foreach ($rows as &$r) {
             $cid = (string) ($r['sip_call_id'] ?? '');
             $r['attempt_legs'] = $legsByCall[$cid] ?? [];
-            $r['has_sip_trace'] = ($r['attempt_legs'] !== []);
+            $r['has_sip_trace'] = trim((string) ($r['sip_trace'] ?? '')) !== '' || $r['attempt_legs'] !== [];
             $dn = Destination::normalize((string) ($r['dst_normalized'] ?? ''));
             $rawDn = Destination::normalize((string) ($r['dst_raw'] ?? ''));
             $r['area_description'] = $areaNames[$dn] ?? $areaNames[$rawDn] ?? null;

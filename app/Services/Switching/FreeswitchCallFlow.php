@@ -204,30 +204,72 @@ final class FreeswitchCallFlow
         }
         $sx = @simplexml_load_string($xml);
         if ($sx === false) {
+            error_log('[ownswitch] fs cdr: XML parse failed');
             return;
         }
         $vars = [];
         foreach ($sx->variables->children() ?? [] as $name => $node) {
-            $vars[(string) $name] = (string) $node;
+            // xml_cdr leaves stamp values percent-encoded (%20, %3A). Decode once or setup_at is rejected and the row is dropped.
+            $vars[(string) $name] = urldecode((string) $node);
         }
-        $bill = (int) ($vars['billsec'] ?? $vars['billsec_int'] ?? 0);
-        $dest = (string) ($vars['destination_number'] ?? $vars['sip_to_user'] ?? '');
-        $src = (string) ($vars['os_sip_user'] ?? $vars['username'] ?? $vars['sip_from_user'] ?? '');
-        $uuid = (string) ($vars['uuid'] ?? '');
+        if (($vars['is_loopback'] ?? '') === '1' || str_starts_with((string) ($vars['channel_name'] ?? ''), 'loopback/')) {
+            return;
+        }
+        $uuid = trim((string) ($vars['uuid'] ?? ''));
+        $parent = trim((string) ($vars['originating_leg_uuid'] ?? ''));
+        $isChild = $parent !== '' && $parent !== $uuid;
+        $trace = $this->sipTraceText($vars, $sx);
+        if ($isChild) {
+            $this->attachChildLeg($parent, $vars, $trace);
+            return;
+        }
+
+        $bill = (int) ($vars['billsec'] ?? 0);
+        $answerEpoch = (int) ($vars['answer_epoch'] ?? 0);
+        $endEpoch = (int) ($vars['end_epoch'] ?? 0);
+        if ($bill <= 0 && $answerEpoch > 0 && $endEpoch > $answerEpoch) {
+            $bill = $endEpoch - $answerEpoch;
+        }
+        $dest = (string) ($vars['destination_number'] ?? $vars['sip_req_user'] ?? $vars['sip_to_user'] ?? '');
+        if ($dest === '' && isset($sx->callflow->caller_profile->destination_number)) {
+            $dest = urldecode((string) $sx->callflow->caller_profile->destination_number);
+        }
+        $src = (string) ($vars['effective_caller_id_number'] ?? $vars['caller_id_number'] ?? $vars['sip_from_user_stripped'] ?? $vars['sip_from_user'] ?? '');
+        $user = (string) ($vars['os_sip_user'] ?? $vars['sip_auth_username'] ?? $vars['username'] ?? '');
+        if ($user === '') {
+            $user = (string) ($vars['sip_from_user'] ?? '');
+        }
         $cause = strtoupper((string) ($vars['hangup_cause'] ?? 'NORMAL_CLEARING'));
         $disp = $bill > 0 ? 'ANSWERED' : match (true) {
             str_contains($cause, 'BUSY') => 'BUSY',
             str_contains($cause, 'NO_ANSWER'), str_contains($cause, 'NO_USER') => 'NO_ANSWER',
             str_contains($cause, 'CANCEL') => 'CANCELLED',
+            str_contains($cause, 'REJECT') => 'FAILED',
             default => 'FAILED',
         };
-        $start = (string) ($vars['start_stamp'] ?? $vars['start_epoch'] ?? '');
-        if ($start !== '' && ctype_digit($start)) {
-            $start = gmdate('Y-m-d H:i:s', (int) $start);
-        }
         $trunkId = null;
-        if (preg_match('/gw-(\d+)/', (string) ($vars['last_bridge_to'] ?? $vars['bridge_channel'] ?? ''), $m)) {
+        if (preg_match('/gw-(\d+)/', (string) ($vars['last_bridge_to'] ?? $vars['bridge_channel'] ?? $vars['channel_name'] ?? ''), $m)) {
             $trunkId = (int) $m[1];
+        }
+        $sipCode = (int) ($vars['sip_term_status'] ?? 0);
+        if ($sipCode <= 0) {
+            $sipCode = (int) ($vars['sip_invite_failure_status'] ?? 0);
+        }
+        if ($sipCode <= 0 && preg_match('/sip:(\d{3})/', (string) ($vars['proto_specific_hangup_cause'] ?? ''), $cm)) {
+            $sipCode = (int) $cm[1];
+        }
+        $mediaPol = strtolower(trim((string) ($vars['os_media_policy'] ?? '')));
+        if (!in_array($mediaPol, MediaPolicy::CHOICES, true)) {
+            $mediaPol = '';
+        }
+        $direction = 'outbound';
+        $ctx = strtolower((string) ($vars['context'] ?? $vars['os_direction'] ?? ''));
+        if (str_contains($ctx, 'inbound') || str_contains($ctx, 'did') || !empty($vars['os_did_inbound'])) {
+            $direction = 'inbound-did';
+        }
+        $callId = trim((string) ($vars['sip_call_id'] ?? ''));
+        if ($callId === '') {
+            $callId = $uuid !== '' ? $uuid : md5($xml);
         }
         $svc = new CdrIngestService(
             $this->db,
@@ -238,39 +280,162 @@ final class FreeswitchCallFlow
             new SettingsService($this->db),
             new \Ownswitch\Repositories\CdrRepository($this->db),
         );
-        $mediaPol = strtolower(trim((string) ($vars['os_media_policy'] ?? '')));
-        if (!in_array($mediaPol, MediaPolicy::CHOICES, true)) {
-            $mediaPol = '';
-        }
-        $direction = 'outbound';
-        $ctx = strtolower((string) ($vars['context'] ?? $vars['os_direction'] ?? ''));
-        if (str_contains($ctx, 'inbound') || str_contains($ctx, 'did') || !empty($vars['os_did_inbound'])) {
-            $direction = 'inbound-did';
-        }
-        $hangupInit = $this->mapHangupInitiator(
-            (string) ($vars['sip_hangup_disposition'] ?? ''),
-            $cause
-        );
-        $svc->ingest([
+        $res = $svc->ingest([
             'external_cdr_key' => $uuid !== '' ? $uuid : md5($xml),
             'uuid' => $uuid,
             'disposition' => $disp,
             'dst' => $dest,
             'src' => $src,
-            'username' => (string) ($vars['os_sip_user'] ?? $src),
-            'sip_call_id' => (string) ($vars['sip_call_id'] ?? $uuid),
-            'setup_at' => $start !== '' ? $start : gmdate('Y-m-d H:i:s'),
+            'username' => $user,
+            'sip_call_id' => $callId,
+            'setup_at' => $this->fsTime((string) ($vars['start_stamp'] ?? ''), (string) ($vars['start_epoch'] ?? '')),
+            'answer_at' => $answerEpoch > 0 ? $this->fsTime((string) ($vars['answer_stamp'] ?? ''), (string) $answerEpoch) : null,
+            'end_at' => $this->fsTime((string) ($vars['end_stamp'] ?? ''), (string) ($vars['end_epoch'] ?? '')),
             'duration' => (string) max(0, $bill),
+            'sip_response' => $sipCode > 0 ? $sipCode : null,
             'carrier_trunk_id' => $trunkId,
             'source_ip' => (string) ($vars['sip_network_ip'] ?? $vars['sip_received_ip'] ?? ''),
             'direction' => $direction,
-            'hangup_initiator' => $hangupInit,
+            'hangup_initiator' => $this->mapHangupInitiator((string) ($vars['sip_hangup_disposition'] ?? ''), $cause),
             'hangup_cause' => $cause !== '' ? $cause : null,
             'failure_reason' => $bill > 0 ? null : ($cause !== '' ? $cause : null),
+            'sip_trace' => $trace,
             'media_policy_requested' => $mediaPol !== '' ? $mediaPol : null,
             'media_policy_actual' => $mediaPol !== '' ? $mediaPol : null,
             'recording_status' => $mediaPol === 'record' ? 'pending' : null,
         ], 'freeswitch');
+        if (($res['status'] ?? '') === 'invalid') {
+            error_log('[ownswitch] fs cdr invalid: ' . implode('; ', $res['errors'] ?? []));
+            return;
+        }
+        $cdrId = (int) ($res['id'] ?? 0);
+        if ($cdrId > 0) {
+            $this->insertAttemptLeg($callId, $cdrId, 1, $trunkId, $sipCode, $cause, $disp);
+            if ($uuid !== '') {
+                $this->db->prepare(
+                    'UPDATE cdr_attempt_legs SET sip_call_id = ?, cdr_id = ? WHERE sip_call_id = ?'
+                )->execute([$callId, $cdrId, 'fsuuid:' . $uuid]);
+            }
+        }
+    }
+
+    /** @param array<string,string> $vars */
+    private function sipTraceText(array $vars, \SimpleXMLElement $sx): string
+    {
+        $lines = ['--- signaling ---'];
+        $map = [
+            'sip_req_uri' => 'Request',
+            'sip_full_from' => 'From',
+            'sip_full_to' => 'To',
+            'sip_call_id' => 'Call-ID',
+            'sip_full_via' => 'Via',
+            'sip_user_agent' => 'User-Agent',
+            'sip_contact_uri' => 'Contact',
+            'channel_name' => 'Channel',
+            'sip_network_ip' => 'Source IP',
+            'sip_local_network_addr' => 'Switch IP',
+            'destination_number' => 'Destination',
+            'hangup_cause' => 'Hangup cause',
+            'sip_hangup_disposition' => 'SIP hangup',
+            'sip_term_status' => 'Term status',
+            'proto_specific_hangup_cause' => 'Proto cause',
+            'sip_invite_failure_status' => 'Invite failure',
+            'sip_invite_failure_phrase' => 'Invite phrase',
+            'bridge_channel' => 'Bridge',
+            'last_bridge_hangup_cause' => 'Bridge hangup',
+            'billsec' => 'Billsec',
+        ];
+        foreach ($map as $key => $label) {
+            $v = trim((string) ($vars[$key] ?? ''));
+            if ($v !== '') {
+                $lines[] = $label . ': ' . $v;
+            }
+        }
+        if (isset($sx->app_log->application)) {
+            $lines[] = '--- dialplan ---';
+            foreach ($sx->app_log->application as $app) {
+                $lines[] = trim((string) $app['app_name'] . ' ' . (string) $app['app_data']);
+            }
+        }
+        return mb_substr(implode("\n", $lines), 0, 60000);
+    }
+
+    private function fsTime(string $stamp, string $epoch): string
+    {
+        $stamp = trim(urldecode($stamp));
+        if ($stamp !== '') {
+            try {
+                return (new \DateTimeImmutable($stamp))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+            } catch (\Throwable) {
+            }
+        }
+        if ($epoch !== '' && ctype_digit($epoch) && (int) $epoch > 0) {
+            return gmdate('Y-m-d H:i:s', (int) $epoch);
+        }
+        return gmdate('Y-m-d H:i:s');
+    }
+
+    /**
+     * Gateway leg: attach SIP trace to the customer CDR. This leg is not billed on its own.
+     *
+     * @param array<string,string> $vars
+     */
+    private function attachChildLeg(string $parentUuid, array $vars, string $trace): void
+    {
+        $st = $this->db->prepare('SELECT id, sip_call_id, sip_trace FROM cdrs WHERE external_cdr_key = ? LIMIT 1');
+        $st->execute(['freeswitch:' . $parentUuid]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        $callId = is_array($row) ? (string) ($row['sip_call_id'] ?? '') : '';
+        if ($callId === '') {
+            $callId = trim((string) ($vars['os_parent_call_id'] ?? ''));
+        }
+        if ($callId === '') {
+            $callId = 'fsuuid:' . $parentUuid;
+        }
+        $cdrId = is_array($row) ? (int) ($row['id'] ?? 0) : 0;
+        if ($cdrId > 0 && $trace !== '') {
+            $prev = (string) ($row['sip_trace'] ?? '');
+            $merged = trim($prev . "\n\n--- gateway leg ---\n" . $trace);
+            $this->db->prepare('UPDATE cdrs SET sip_trace = ? WHERE id = ?')->execute([mb_substr($merged, 0, 60000), $cdrId]);
+        }
+        $trunkId = null;
+        if (preg_match('/gw-(\d+)/', (string) ($vars['channel_name'] ?? ''), $m)) {
+            $trunkId = (int) $m[1];
+        }
+        $code = (int) ($vars['sip_term_status'] ?? $vars['sip_invite_failure_status'] ?? 0);
+        $cause = strtoupper((string) ($vars['hangup_cause'] ?? ''));
+        $bill = (int) ($vars['billsec'] ?? 0);
+        $disp = $bill > 0 ? 'ANSWERED' : ($cause !== '' ? $cause : 'FAILED');
+        $next = 2;
+        if ($callId !== '') {
+            $n = $this->db->prepare('SELECT COALESCE(MAX(attempt_no), 1) FROM cdr_attempt_legs WHERE sip_call_id = ?');
+            $n->execute([$callId]);
+            $next = ((int) $n->fetchColumn()) + 1;
+        }
+        $this->insertAttemptLeg($callId, $cdrId > 0 ? $cdrId : null, $next, $trunkId, $code, $cause, $disp);
+    }
+
+    private function insertAttemptLeg(string $callId, ?int $cdrId, int $attempt, ?int $trunkId, int $sipCode, string $reason, string $disp): void
+    {
+        if ($callId === '') {
+            return;
+        }
+        try {
+            $this->db->prepare(
+                'INSERT INTO cdr_attempt_legs (sip_call_id, cdr_id, attempt_no, carrier_trunk_id, trunk_name, sip_code, sip_reason, disposition)
+                 VALUES (?, ?, ?, ?, NULL, ?, ?, ?)'
+            )->execute([
+                mb_substr($callId, 0, 190),
+                $cdrId,
+                $attempt,
+                $trunkId,
+                $sipCode > 0 ? $sipCode : null,
+                mb_substr($reason, 0, 190),
+                mb_substr($disp, 0, 32),
+            ]);
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] fs cdr leg: ' . $e->getMessage());
+        }
     }
 
     /** Map FreeSWITCH sip_hangup_disposition / hangup cause to caller|callee|system. */
@@ -313,6 +478,8 @@ final class FreeswitchCallFlow
         $fromUser = trim((string) ($trunk['from_user'] ?? ''));
         $fromDomain = trim((string) ($trunk['from_domain'] ?? ''));
         $vars = [];
+        $vars[] = 'os_sip_user=' . (string) ($account['username'] ?? '');
+        $vars[] = 'os_parent_call_id=${sip_call_id}';
         // Trunk From user wins for SIP From; otherwise use rewritten CLI when known.
         $effectiveCid = $fromUser !== '' ? $fromUser : $cidNum;
         if ($effectiveCid !== '') {

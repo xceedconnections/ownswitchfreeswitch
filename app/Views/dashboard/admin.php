@@ -169,7 +169,7 @@ $flowing = $w['attempts'] > 0;
         <?php if (!$failed['reasons']): ?>
             <div class="small text-muted">No failed calls in the last 24 hours.</div>
         <?php endif; ?>
-        <div class="mt-3"><a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/reports/cdr-failed')) ?>">View failed calls</a></div>
+        <div class="mt-3"><a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/cdrs')) ?>">View call history</a></div>
     </div>
 
     <div class="os-widget">

@@ -74,14 +74,13 @@ final class ReportController extends BaseController
         ]);
     }
 
-    /** Failed CDRs shortcut (Magnus CDR Failed) — all non-answered legs. */
+    /** Old "CDR Failed" bookmark. Call history is the single CDR list. */
     public function cdrFailed(Request $r, array $p = []): Response
     {
         $q = $r->query;
-        unset($q['disposition']);
-        $q['failed_only'] = '1';
+        unset($q['disposition'], $q['failed_only']);
         $qs = http_build_query($q);
-        return Response::redirect(url('/cdrs?' . $qs));
+        return Response::redirect(url('/cdrs' . ($qs !== '' ? '?' . $qs : '')));
     }
 
     /** Post-dial delay (setup → answer) for answered calls. */
