@@ -21,6 +21,7 @@ PORTAL_JAIL_FILE=/etc/fail2ban/jail.d/ownswitch-portal.local
 SIP_FILTER=/etc/fail2ban/filter.d/opensips-auth.conf
 PORTAL_FILTER=/etc/fail2ban/filter.d/ownswitch-portal.conf
 SIP_PORT="${SIP_PORT:-5060}"
+SIP_AUTH_LOG=/usr/local/freeswitch/log/auth.log
 
 die() { echo "ERR:$1" >&2; exit 1; }
 
@@ -198,23 +199,105 @@ cmd_config() {
   cmd_config_for "$jail"
 }
 
+env_get() {
+  local key="$1" file="/etc/ownswitch/ownswitch.env"
+  [[ -r "$file" ]] || return 0
+  sed -n "s/^${key}=//p" "$file" | head -1 | tr -d '\r' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+
+# This host, plus carrier trunk addresses, so a trunk reply is never banned.
+sip_ignore_ips() {
+  local ips="127.0.0.1/8 ::1" ip host db_user db_pass db_name db_host cnf
+  for ip in $(hostname -I 2>/dev/null); do
+    ips="$ips $ip"
+  done
+  ip="$(sed -n 's/.*name="ext-sip-ip" value="\([^"]*\)".*/\1/p' /usr/local/freeswitch/conf/sip_profiles/external.xml 2>/dev/null | head -1)"
+  case "$ip" in
+    ""|\$\$*|@@*) ;;
+    *) ips="$ips $ip" ;;
+  esac
+  db_user="$(env_get DB_USERNAME)"
+  [[ -n "$db_user" ]] || db_user="$(env_get DB_USER)"
+  db_pass="$(env_get DB_PASSWORD)"
+  db_name="$(env_get DB_DATABASE)"
+  [[ -n "$db_name" ]] || db_name="$(env_get DB_NAME)"
+  db_host="$(env_get DB_HOST)"
+  [[ -n "$db_host" ]] || db_host="127.0.0.1"
+  if [[ -n "$db_user" && -n "$db_name" ]]; then
+    cnf="$(mktemp)"
+    chmod 600 "$cnf"
+    printf '[client]\nuser=%s\npassword=%s\nhost=%s\n' "$db_user" "$db_pass" "$db_host" >"$cnf"
+    while read -r host; do
+      [[ -n "$host" ]] || continue
+      if [[ "$host" =~ ^[0-9a-fA-F:.]+$ ]]; then
+        ips="$ips $host"
+      else
+        while read -r ip; do
+          [[ -n "$ip" ]] && ips="$ips $ip"
+        done < <(getent ahostsv4 "$host" 2>/dev/null | awk '{print $1}' | sort -u)
+      fi
+    done < <(mysql --defaults-extra-file="$cnf" -N -e "SELECT DISTINCT host FROM carrier_trunks WHERE status='active' AND host<>''" "$db_name" 2>/dev/null || true)
+    rm -f "$cnf"
+  fi
+  echo "$ips" | tr ' ' '\n' | awk 'NF && !seen[$0]++' | sort | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+}
+
 write_sip_jail() {
   local maxretry="$1" findtime="$2" bantime="$3" enabled="$4"
-  cat >"$SIP_JAIL_FILE" <<EOF
+  local dest="${5:-$SIP_JAIL_FILE}"
+  local ignore
+  ignore="$(sip_ignore_ips)"
+  mkdir -p "$(dirname "$SIP_AUTH_LOG")"
+  touch "$SIP_AUTH_LOG"
+  chown freeswitch:freeswitch "$SIP_AUTH_LOG" 2>/dev/null || true
+  chmod 0640 "$SIP_AUTH_LOG" 2>/dev/null || true
+  cat >"$dest" <<EOF
 # Managed by Ownswitch (portal Firewall / deploy)
+# FreeSWITCH auth warnings + ownswitch-sip syslog. OpenSIPS is not the SIP edge.
 [opensips-auth]
 enabled  = ${enabled}
 filter   = opensips-auth
 port     = ${SIP_PORT}
 protocol = udp,tcp
-backend  = systemd
-journalmatch = _SYSTEMD_UNIT=opensips.service
+backend  = auto
+logpath  = ${SIP_AUTH_LOG}
+           /var/log/auth.log
 maxretry = ${maxretry}
 findtime = ${findtime}
 bantime  = ${bantime}
+ignoreip = ${ignore}
+usedns   = no
 action   = %(action_)s
 EOF
-  chmod 0644 "$SIP_JAIL_FILE"
+  if [[ "$dest" == "$SIP_JAIL_FILE" ]]; then
+    chmod 0644 "$SIP_JAIL_FILE"
+  fi
+}
+
+cmd_ensure_sip() {
+  systemctl enable fail2ban >/dev/null 2>&1 || true
+  systemctl start fail2ban >/dev/null 2>&1 || true
+  need_f2b
+  local maxretry findtime bantime enabled tmp
+  maxretry="$(read_kv maxretry "$SIP_JAIL_FILE" 5)"
+  findtime="$(read_kv findtime "$SIP_JAIL_FILE" 10m)"
+  bantime="$(read_kv bantime "$SIP_JAIL_FILE" 24h)"
+  enabled="$(read_kv enabled "$SIP_JAIL_FILE" true)"
+  # Stock installer used a 1 hour ban and watched OpenSIPS, which is not running.
+  if [[ -f "$SIP_JAIL_FILE" ]] && grep -q 'opensips.service' "$SIP_JAIL_FILE" && [[ "$bantime" == "1h" ]]; then
+    bantime="24h"
+  fi
+  tmp="$(mktemp)"
+  write_sip_jail "$maxretry" "$findtime" "$bantime" "$enabled" "$tmp"
+  if [[ -f "$SIP_JAIL_FILE" ]] && cmp -s "$tmp" "$SIP_JAIL_FILE"; then
+    rm -f "$tmp"
+    echo "OK sip jail unchanged"
+    return 0
+  fi
+  install -m 0644 "$tmp" "$SIP_JAIL_FILE"
+  rm -f "$tmp"
+  fail2ban-client reload opensips-auth >/dev/null 2>&1 || fail2ban-client reload >/dev/null 2>&1 || systemctl reload fail2ban
+  echo "OK sip jail updated bantime=${bantime}"
 }
 
 write_portal_jail() {
@@ -321,10 +404,16 @@ cmd_ip_log() {
   local ip="${1:-}"
   [[ -n "$ip" ]] || die "usage: ip-log <ip>"
   {
-    journalctl -u opensips --no-pager -n 800 2>/dev/null \
+    grep -F "$ip" "$SIP_AUTH_LOG" 2>/dev/null \
+      | grep -iE 'auth failure|find user|auth failed' \
+      | tail -n 20 || true
+    grep -F "ownswitch-sip" /var/log/auth.log 2>/dev/null \
+      | grep -F "$ip" \
+      | tail -n 20 || true
+    journalctl -u opensips --no-pager -n 400 2>/dev/null \
       | grep -F "$ip" \
       | grep -iE 'auth failed|REGISTER|INVITE|Forbidden|Unauthorized' \
-      | tail -n 20 || true
+      | tail -n 10 || true
     journalctl -t ownswitch-portal --no-pager -n 400 2>/dev/null \
       | grep -F "$ip" \
       | tail -n 20 || true
@@ -370,10 +459,11 @@ case "${1:-}" in
   config)     shift; cmd_config "$@" ;;
   set-config) shift; cmd_set_config "$@" ;;
   reload)     shift; cmd_reload "$@" ;;
+  ensure-sip) shift; cmd_ensure_sip "$@" ;;
   ip-log)     shift; cmd_ip_log "$@" ;;
   geo)        shift; cmd_geo "$@" ;;
   *)
-    echo "usage: $0 {status-all|status|banned|unban|ban|config|set-config|reload|ip-log|geo}" >&2
+    echo "usage: $0 {status-all|status|banned|unban|ban|config|set-config|reload|ensure-sip|ip-log|geo}" >&2
     exit 2
     ;;
 esac

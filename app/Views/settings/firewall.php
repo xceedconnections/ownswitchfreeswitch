@@ -24,7 +24,7 @@ $refreshQs = $query !== [] ? ('?' . http_build_query($query)) : '';
 <div class="os-page-head">
     <div>
         <h1 class="os-page-title">Firewall</h1>
-        <p class="os-page-sub">Auto-block SIP and portal hacking attempts — banned IPs appear below</p>
+        <p class="os-page-sub">Blocks repeated SIP and portal hacking attempts. Unknown SIP users cannot place calls. Bans stay until the duration ends.</p>
     </div>
     <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/settings')) ?>"><i class="bi bi-gear me-1"></i>Settings</a>
 </div>
@@ -36,7 +36,7 @@ $refreshQs = $query !== [] ? ('?' . http_build_query($query)) : '';
     </div>
 <?php else: ?>
     <div class="os-dash-grid os-dash-kpis mb-3">
-        <div class="os-kpi os-kpi--teal"><div class="lbl">SIP jail</div><div class="val"><?= !empty($sip['enabled']) ? 'On' : 'Off' ?></div><div class="sub">opensips-auth · UDP/TCP <?= e((string) ($sip['sip_port'] ?? '5060')) ?></div></div>
+        <div class="os-kpi os-kpi--teal"><div class="lbl">SIP jail</div><div class="val"><?= !empty($sip['enabled']) ? 'On' : 'Off' ?></div><div class="sub">FreeSWITCH · UDP/TCP <?= e((string) ($sip['sip_port'] ?? '5060')) ?></div></div>
         <div class="os-kpi os-kpi--blue"><div class="lbl">Portal jail</div><div class="val"><?= !empty($portal['enabled']) ? 'On' : 'Off' ?></div><div class="sub">ownswitch-portal · HTTP/S</div></div>
         <div class="os-kpi os-kpi--amber"><div class="lbl">Banned now</div><div class="val"><?= e((string) ($s['currently_banned'] ?? count($entries))) ?></div><div class="sub">active blocks</div></div>
         <div class="os-kpi os-kpi--violet"><div class="lbl">Auto-unban</div><div class="val"><?= e((string) ($sip['bantime'] ?? '1h')) ?></div><div class="sub">after ban duration</div></div>
@@ -45,7 +45,7 @@ $refreshQs = $query !== [] ? ('?' . http_build_query($query)) : '';
 
 <div class="row g-3">
     <div class="col-lg-4">
-        <?php foreach ([['key' => 'opensips-auth', 'cfg' => $sip, 'title' => 'SIP auth thresholds', 'hint' => 'Wrong REGISTER/INVITE password on 5060'], ['key' => 'ownswitch-portal', 'cfg' => $portal, 'title' => 'Portal login thresholds', 'hint' => 'Wrong password or CAPTCHA on web login']] as $block):
+        <?php foreach ([['key' => 'opensips-auth', 'cfg' => $sip, 'title' => 'SIP auth thresholds', 'hint' => 'Unknown users and wrong SIP passwords on 5060 are rejected, then banned'], ['key' => 'ownswitch-portal', 'cfg' => $portal, 'title' => 'Portal login thresholds', 'hint' => 'Wrong password or CAPTCHA on web login']] as $block):
             $cfg = $block['cfg'];
             $jid = preg_replace('/[^a-z0-9]/', '', $block['key']);
             ?>

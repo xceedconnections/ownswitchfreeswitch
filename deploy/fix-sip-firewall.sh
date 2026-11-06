@@ -32,11 +32,14 @@ enabled  = true
 filter   = opensips-auth
 port     = ${SIP_PORT}
 protocol = udp,tcp
-backend  = systemd
-journalmatch = _SYSTEMD_UNIT=opensips.service
+backend  = auto
+logpath  = /usr/local/freeswitch/log/auth.log
+           /var/log/auth.log
 maxretry = 5
 findtime = 10m
-bantime  = 1h
+bantime  = 24h
+ignoreip = 127.0.0.1/8 ::1
+usedns   = no
 action   = %(action_)s
 EOF
   chmod 0644 /etc/fail2ban/jail.d/ownswitch-sip.local

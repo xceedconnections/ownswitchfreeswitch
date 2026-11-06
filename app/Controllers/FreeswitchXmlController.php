@@ -10,6 +10,7 @@ use Ownswitch\Http\Response;
 use Ownswitch\Services\Switching\FreeswitchCallFlow;
 use Ownswitch\Support\Crypto;
 use Ownswitch\Support\MediaPolicy;
+use Ownswitch\Support\SipAuthLog;
 use Ownswitch\Support\SipCodecs;
 use Ownswitch\Support\SipHosts;
 
@@ -97,6 +98,11 @@ final class FreeswitchXmlController
             $rows = $st ? ($st->fetchAll(\PDO::FETCH_ASSOC) ?: []) : [];
         }
         if ($rows === []) {
+            // Unknown SIP user. Sofia still rejects the digest; this line is what fail2ban bans.
+            if ($user !== '') {
+                $method = strtoupper(trim((string) $r->input('sip_auth_method', $r->input('method', 'REGISTER'))));
+                SipAuthLog::failed($method === 'INVITE' ? 'INVITE' : 'REGISTER', $user, $this->sipSourceIp($r));
+            }
             return $this->notFound();
         }
 
@@ -232,6 +238,17 @@ final class FreeswitchXmlController
             . "        <variables>\n" . $vars
             . "        </variables>\n"
             . "      </user>\n";
+    }
+
+    private function sipSourceIp(Request $r): string
+    {
+        foreach (['ip', 'network_ip', 'sip_network_ip', 'variable_sip_network_ip', 'Caller-Network-Addr', 'network-ip'] as $key) {
+            $ip = trim((string) $r->input($key, ''));
+            if (filter_var($ip, FILTER_VALIDATE_IP) !== false) {
+                return $ip;
+            }
+        }
+        return '';
     }
 
     private function authorized(Request $r): bool

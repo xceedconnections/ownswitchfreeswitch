@@ -22,6 +22,9 @@
     <param name="inbound-late-negotiation" value="true"/>
     <param name="auth-calls" value="true"/>
     <param name="auth-all-packets" value="false"/>
+    <!-- WARNING lines for wrong passwords and unknown users. fail2ban reads auth.log. -->
+    <param name="log-auth-failures" value="true"/>
+    <param name="accept-blind-reg" value="false"/>
     <!-- REGISTER To/Contact user must equal the Authorization username (Asterisk match_auth_username). -->
     <param name="inbound-reg-force-matching-username" value="true"/>
     <!-- OPTIONS to every registered contact. ping-time is the Live column, in the SIP path. -->

@@ -164,8 +164,13 @@ fi
 if [[ -f "$SRC/deploy/templates/fail2ban/ownswitch-portal.local" && ! -f /etc/fail2ban/jail.d/ownswitch-portal.local ]]; then
   install -m 0644 "$SRC/deploy/templates/fail2ban/ownswitch-portal.local" /etc/fail2ban/jail.d/ownswitch-portal.local
 fi
-if command -v fail2ban-client >/dev/null 2>&1 && systemctl is-active --quiet fail2ban 2>/dev/null; then
-  fail2ban-client reload >/dev/null 2>&1 || systemctl reload fail2ban >/dev/null 2>&1 || true
+cat >/etc/cron.d/ownswitch-sip-firewall <<'EOF'
+# Keep the SIP ban list on FreeSWITCH logs, and never ban this host or a carrier trunk.
+*/10 * * * * root /usr/local/sbin/ownswitch-fail2ban ensure-sip >/dev/null 2>&1
+EOF
+chmod 0644 /etc/cron.d/ownswitch-sip-firewall
+if [[ -x /usr/local/sbin/ownswitch-fail2ban ]]; then
+  /usr/local/sbin/ownswitch-fail2ban ensure-sip || echo "WARN: sip jail ensure failed" >&2
 fi
 
 echo
@@ -208,6 +213,69 @@ if [[ -f "${EXT_XML}" ]]; then
     fi
   fi
 fi
+# Auth-failure log for fail2ban, and Sofia log-auth-failures. Profile restart only when idle.
+FS_AUTH_LOG="/usr/local/freeswitch/log/auth.log"
+LOGFILE_XML="${FS_CONF}/autoload_configs/logfile.conf.xml"
+AUTH_LOG_ADDED=0
+if [[ -f "${LOGFILE_XML}" ]] && ! grep -q 'profile name="auth"' "${LOGFILE_XML}"; then
+  AUTH_LOG_ADDED=1
+  python3 - "${LOGFILE_XML}" <<'PY'
+import sys
+from pathlib import Path
+p = Path(sys.argv[1])
+text = p.read_text()
+if 'profile name="auth"' in text:
+    raise SystemExit(0)
+block = """    <profile name="auth">
+      <settings>
+        <param name="logfile" value="/usr/local/freeswitch/log/auth.log"/>
+        <param name="rollover" value="10485760"/>
+        <param name="maximum-rotate" value="5"/>
+        <param name="uuid" value="false"/>
+      </settings>
+      <mappings>
+        <map name="all" value="warning,err,crit,alert"/>
+      </mappings>
+    </profile>
+"""
+if "</profiles>" not in text:
+    raise SystemExit("logfile.conf.xml has no profiles section")
+p.write_text(text.replace("</profiles>", block + "  </profiles>", 1))
+print("added FreeSWITCH auth log profile")
+PY
+fi
+install -d -m 0750 -o freeswitch -g freeswitch /usr/local/freeswitch/log 2>/dev/null || true
+touch "$FS_AUTH_LOG"
+chown freeswitch:freeswitch "$FS_AUTH_LOG" 2>/dev/null || true
+chmod 0640 "$FS_AUTH_LOG" 2>/dev/null || true
+AUTH_PARAM_ADDED=0
+if [[ -f "${EXT_XML}" ]] && ! grep -q 'name="log-auth-failures"' "${EXT_XML}"; then
+  sed -i 's#<param name="auth-calls" value="true"/>#<param name="auth-calls" value="true"/>\n    <param name="log-auth-failures" value="true"/>#' "${EXT_XML}"
+  AUTH_PARAM_ADDED=1
+  echo "Enabled Sofia log-auth-failures"
+fi
+if [[ -f "${EXT_XML}" ]] && ! grep -q 'name="accept-blind-reg"' "${EXT_XML}"; then
+  sed -i 's#<param name="log-auth-failures" value="true"/>#<param name="log-auth-failures" value="true"/>\n    <param name="accept-blind-reg" value="false"/>#' "${EXT_XML}" || true
+fi
+fscli() {
+  local pw
+  pw="$(cat /etc/ownswitch/secrets/freeswitch_esl_password 2>/dev/null || true)"
+  [[ -n "$pw" && -x /usr/local/freeswitch/bin/fs_cli ]] || return 1
+  /usr/local/freeswitch/bin/fs_cli -H 127.0.0.1 -P 8021 -p "$pw" -x "$1"
+}
+if [[ "$AUTH_LOG_ADDED" == "1" ]]; then
+  fscli "reload mod_logfile" >/dev/null 2>&1 || true
+fi
+if [[ "$AUTH_PARAM_ADDED" == "1" ]]; then
+  calls="$(fscli "show calls count" 2>/dev/null || true)"
+  if echo "$calls" | grep -q '0 total'; then
+    fscli "sofia profile external restart" >/dev/null 2>&1 || true
+    echo "Reloaded Sofia external so auth failures are logged (no calls were up)"
+  else
+    echo "WARN: log-auth-failures is in the profile but calls are up, so it starts on the next FreeSWITCH restart" >&2
+  fi
+fi
+
 # Warn if directory auth module is missing (SIP REGISTER will Forbidden).
 if [[ ! -f /usr/local/freeswitch/lib/freeswitch/mod/mod_xml_curl.so ]]; then
   echo "WARN: mod_xml_curl.so missing — SIP REGISTER will fail. Run: sudo bash $SRC/deploy/fix-fs-xml-curl.sh" >&2

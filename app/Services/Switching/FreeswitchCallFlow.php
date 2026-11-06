@@ -17,6 +17,7 @@ use Ownswitch\Services\Routing\TrunkHourStatsService;
 use Ownswitch\Support\Destination;
 use Ownswitch\Support\DstFormat;
 use Ownswitch\Support\MediaPolicy;
+use Ownswitch\Support\SipAuthLog;
 use Ownswitch\Support\SipHosts;
 use PDO;
 
@@ -50,6 +51,8 @@ final class FreeswitchCallFlow
             return $this->bridgeUser($didUser);
         }
         if ($account === null) {
+            // Reached the dialplan with no SIP account and no DID. Not a customer call.
+            SipAuthLog::failed('INVITE', $user !== '' ? $user : 'unknown', $ip);
             return $this->reject('403', 'CALL_REJECTED');
         }
         if (!$this->allowsCalls($account)) {
