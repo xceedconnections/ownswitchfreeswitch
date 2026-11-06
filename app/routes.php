@@ -36,7 +36,6 @@ use Ownswitch\Controllers\VoucherController;
 use Ownswitch\Controllers\VoucherRedeemController;
 use Ownswitch\Controllers\SipUserController;
 use Ownswitch\Controllers\StatsController;
-use Ownswitch\Controllers\StatementController;
 use Ownswitch\Controllers\SystemController;
 use Ownswitch\Controllers\TariffController;
 use Ownswitch\Controllers\CallsOnlineController;
@@ -257,7 +256,7 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $r->get('/ledger', static fn () => Response::redirect(url('/payments')));
     $r->get('/ledger/{id}/reverse', static fn () => Response::redirect(url('/payments')));
     $r->post('/ledger/{id}/reverse', static fn () => Response::redirect(url('/payments')));
-    $r->get('/statements', [new StatementController(), 'index'], [$role(Menu::LEDGER_READ)]);
+    $r->get('/statements', static fn () => Response::redirect(url('/payments')));
     $r->get('/invoices', static fn () => Response::redirect(url('/payments')));
     $r->get('/invoices/{id}', static fn () => Response::redirect(url('/payments')));
     $r->post('/invoices/generate', static fn () => Response::redirect(url('/payments')));

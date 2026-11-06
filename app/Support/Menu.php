@@ -41,7 +41,6 @@ final class Menu
             ['Billing', [
                 ['Refills', '/billing/refill', self::STAFF],
                 ['Payments', '/payments', self::FINANCE],
-                ['Statements', '/statements', self::LEDGER_READ],
                 ['Vouchers', '/vouchers', self::STAFF],
                 ['Redeem voucher', '/billing/redeem-voucher', self::CUSTOMER],
                 ['Billing Preview', '/billing/preview', self::STAFF],
