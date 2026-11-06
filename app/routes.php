@@ -282,6 +282,7 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $r->get('/stats/users', [$stats, 'users'], [$STAFF]);
     $r->get('/stats/carriers', [$stats, 'carriers'], [$STAFF]);
     $settings = new SettingsController();
+    $r->get('/branding/logo', [$settings, 'logo']);
     $r->get('/settings', [$settings, 'edit'], [$STAFF]);
     $r->post('/settings', [$settings, 'update'], [$STAFF]);
     $fw = new FirewallController();

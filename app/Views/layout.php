@@ -23,20 +23,17 @@ $initials = static function (string $name): string {
     $b = strtoupper(substr($parts[1] ?? '', 0, 1));
     return $a . $b;
 };
-$logoPath = null;
+$logoUrl = null;
 $footerBrand = 'Ownswitch';
 try {
     $settingsSvc = new \Ownswitch\Services\Settings\SettingsService(\Ownswitch\App::db());
-    $logoRel = $settingsSvc->get('switch_logo', '');
-    if (is_string($logoRel) && $logoRel !== '' && is_file(\Ownswitch\App::basePath('public/' . ltrim($logoRel, '/')))) {
-        $logoPath = $logoRel;
-    }
+    $logoUrl = switch_logo_url();
     $sn = $settingsSvc->get('switch_name', '');
     if (is_string($sn) && trim($sn) !== '') {
         $footerBrand = trim($sn);
     }
 } catch (\Throwable) {
-    $logoPath = null;
+    $logoUrl = null;
 }
 $headerBalance = null;
 if ($user && in_array($user['role'] ?? '', ['customer_owner', 'customer_tech'], true) && !empty($user['customer_id'])) {
@@ -64,8 +61,8 @@ if ($user && in_array($user['role'] ?? '', ['customer_owner', 'customer_tech'], 
 <header class="os-header">
     <div class="os-header-inner">
         <a class="os-logo" href="<?= e(url('/')) ?>">
-            <?php if ($logoPath): ?>
-                <img src="<?= e(base_url() . '/' . ltrim($logoPath, '/')) ?>" alt="Ownswitch" class="os-logo-img">
+            <?php if ($logoUrl): ?>
+                <img src="<?= e($logoUrl) ?>" alt="Ownswitch" class="os-logo-img">
             <?php else: ?>
                 <span class="os-logo-mark">Ow</span>
                 <span class="os-logo-text">Ownswitch</span>

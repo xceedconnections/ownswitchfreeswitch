@@ -36,6 +36,31 @@ if (!function_exists('asset')) {
     }
 }
 
+if (!function_exists('switch_logo_url')) {
+    /** Authenticated URL for the uploaded switch logo, or null when none is stored. */
+    function switch_logo_url(): ?string
+    {
+        try {
+            $rel = (new \Ownswitch\Services\Settings\SettingsService(\Ownswitch\App::db()))->get('switch_logo', '');
+        } catch (\Throwable) {
+            return null;
+        }
+        if (!is_string($rel) || $rel === '') {
+            return null;
+        }
+        $name = basename(str_replace('\\', '/', $rel));
+        if (!preg_match('/^logo\.(png|jpe?g|webp|svg)$/', $name)) {
+            return null;
+        }
+        $abs = \Ownswitch\App::basePath('storage/uploads/branding/' . $name);
+        if (!is_file($abs)) {
+            return null;
+        }
+        $mtime = @filemtime($abs) ?: time();
+        return url('/branding/logo') . '?v=' . $mtime;
+    }
+}
+
 if (!function_exists('csrf_token')) {
     function csrf_token(): string
     {

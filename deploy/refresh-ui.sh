@@ -54,7 +54,7 @@ echo "Source OK at $HEAD (Mission Control dashboard present)"
 
 getent passwd ownswitch >/dev/null 2>&1 || useradd --system --home-dir "$OWN_OPT" --shell /usr/sbin/nologin --user-group ownswitch
 install -d -m 0755 "$OWN_OPT/releases"
-install -d -m 0750 -o ownswitch -g ownswitch "$OWN_VAR/storage/cache" "$OWN_VAR/storage/uploads" 2>/dev/null || true
+install -d -m 0750 -o ownswitch -g ownswitch "$OWN_VAR/storage/cache" "$OWN_VAR/storage/uploads" "$OWN_VAR/storage/uploads/branding" 2>/dev/null || true
 
 REL="$OWN_OPT/releases/ui-$(date -u +%Y%m%d%H%M%S)-${HEAD}"
 mkdir -p "$REL"

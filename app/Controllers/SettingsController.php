@@ -42,7 +42,7 @@ final class SettingsController extends BaseController
             'schema' => SettingsService::SCHEMA,
             'values' => $values,
             'errors' => [],
-            'logoUrl' => $this->logoPublicUrl($values['switch_logo'] ?? ''),
+            'logoUrl' => switch_logo_url(),
             'codecOptions' => SipCodecs::formOptions(),
         ]);
     }
@@ -90,9 +90,20 @@ final class SettingsController extends BaseController
                 'schema' => SettingsService::SCHEMA,
                 'values' => $values,
                 'errors' => $errors,
-                'logoUrl' => $this->logoPublicUrl($values['switch_logo'] ?? ''),
+                'logoUrl' => switch_logo_url(),
                 'codecOptions' => SipCodecs::formOptions(),
             ], 422);
+        }
+
+        if (($clean['switch_logo'] ?? null) === '') {
+            $dir = $this->brandingDir();
+            if ($dir !== '') {
+                foreach (glob($dir . '/logo.*') ?: [] as $old) {
+                    if (is_file($old)) {
+                        @unlink($old);
+                    }
+                }
+            }
         }
 
         $uid = (int) $this->user($r)['id'];
@@ -115,12 +126,40 @@ final class SettingsController extends BaseController
         return $this->redirect($r, '/settings', $msg);
     }
 
-    /** @param array<string,mixed> $file */
+    /** GET /branding/logo — the stored logo, for the signed-in header. */
+    public function logo(Request $r, array $p = []): Response
+    {
+        $rel = (new SettingsService($this->db()))->get('switch_logo', '');
+        $abs = $this->logoAbsolute(is_string($rel) ? $rel : '');
+        if ($abs === null) {
+            return $this->notFound('Logo not found');
+        }
+        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
+        $mime = [
+            'png' => 'image/png',
+            'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'webp' => 'image/webp',
+            'svg' => 'image/svg+xml',
+        ][$ext] ?? 'application/octet-stream';
+        $body = (string) file_get_contents($abs);
+        return new Response($body, 200, [
+            'Content-Type' => $mime,
+            'Content-Length' => (string) strlen($body),
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, max-age=300',
+        ]);
+    }
+
+    /** @param array<string,mixed> $file @return array{0:?string,1:?string} */
     private function storeLogo(array $file): array
     {
         $err = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($err === UPLOAD_ERR_INI_SIZE || $err === UPLOAD_ERR_FORM_SIZE) {
+            return [null, 'Logo must be under 2 MB.'];
+        }
         if ($err !== UPLOAD_ERR_OK) {
-            return [null, 'Logo upload failed (error ' . $err . ').'];
+            return [null, 'Logo upload failed. Choose a PNG, JPG, WEBP or SVG under 2 MB.'];
         }
         $tmp = (string) ($file['tmp_name'] ?? '');
         $size = (int) ($file['size'] ?? 0);
@@ -130,27 +169,21 @@ final class SettingsController extends BaseController
         if ($size <= 0 || $size > 2 * 1024 * 1024) {
             return [null, 'Logo must be under 2 MB.'];
         }
-        $finfo = new \finfo(FILEINFO_MIME_TYPE);
-        $mime = (string) $finfo->file($tmp);
-        $map = [
-            'image/png' => 'png',
-            'image/jpeg' => 'jpg',
-            'image/webp' => 'webp',
-            'image/svg+xml' => 'svg',
-        ];
-        if (!isset($map[$mime])) {
+        $ext = $this->logoExtension($tmp);
+        if ($ext === null) {
             return [null, 'Logo must be PNG, JPG, WEBP or SVG.'];
         }
-        $dir = App::basePath('public/uploads/branding');
-        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+        $dir = $this->brandingDir();
+        if ($dir === '') {
             return [null, 'Cannot create branding upload folder.'];
         }
-        // Remove previous logo files
         foreach (glob($dir . '/logo.*') ?: [] as $old) {
-            @unlink($old);
+            if (is_file($old)) {
+                @unlink($old);
+            }
         }
-        $rel = 'uploads/branding/logo.' . $map[$mime];
-        $dest = App::basePath('public/' . $rel);
+        $rel = 'uploads/branding/logo.' . $ext;
+        $dest = $dir . '/logo.' . $ext;
         if (!move_uploaded_file($tmp, $dest)) {
             return [null, 'Could not store logo file.'];
         }
@@ -158,15 +191,51 @@ final class SettingsController extends BaseController
         return [$rel, null];
     }
 
-    private function logoPublicUrl(?string $rel): ?string
+    private function brandingDir(): string
     {
-        if ($rel === null || $rel === '') {
+        $dir = App::basePath('storage/uploads/branding');
+        if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+            return '';
+        }
+        return $dir;
+    }
+
+    private function logoExtension(string $tmp): ?string
+    {
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mime = (string) $finfo->file($tmp);
+        $map = [
+            'image/png' => 'png',
+            'image/x-png' => 'png',
+            'image/jpeg' => 'jpg',
+            'image/pjpeg' => 'jpg',
+            'image/webp' => 'webp',
+            'image/svg+xml' => 'svg',
+            'image/svg' => 'svg',
+        ];
+        if (isset($map[$mime])) {
+            return $map[$mime];
+        }
+        if (in_array($mime, ['text/plain', 'text/xml', 'application/xml', 'text/html'], true)) {
+            $head = (string) file_get_contents($tmp, false, null, 0, 512);
+            if (preg_match('/<svg[\s>]/i', $head) && !preg_match('/<\?(?:php|=)/i', $head)) {
+                return 'svg';
+            }
+        }
+        return null;
+    }
+
+    private function logoAbsolute(string $rel): ?string
+    {
+        $name = basename(str_replace('\\', '/', $rel));
+        if (!preg_match('/^logo\.(png|jpe?g|webp|svg)$/', $name)) {
             return null;
         }
-        $abs = App::basePath('public/' . ltrim($rel, '/'));
-        if (!is_file($abs)) {
+        $dir = $this->brandingDir();
+        if ($dir === '') {
             return null;
         }
-        return base_url() . '/' . ltrim($rel, '/');
+        $abs = $dir . '/' . $name;
+        return is_file($abs) ? $abs : null;
     }
 }
