@@ -132,5 +132,4 @@ if ($sipTrace !== '' || $legs !== []):
     <?php endif; ?>
 </div>
 <?php endif; ?>
-<?php include __DIR__ . '/../partials/audio_player.php'; ?>
 

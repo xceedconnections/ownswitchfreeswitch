@@ -1027,3 +1027,32 @@ body.os-body > .os-main-top { flex: 1 0 auto; }
   text-underline-offset: 4px;
 }
 .mc-kpi.is-warn { background: #fffdf7; }
+
+.os-audio-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1030;
+  background: #fff;
+  border-top: 1px solid #e6e8ee;
+  box-shadow: 0 -6px 20px rgba(15, 23, 42, .08);
+  padding: .65rem 1rem;
+}
+.os-audio-dock[hidden] { display: none !important; }
+.os-audio-dock-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+.os-audio-dock audio { flex: 1; min-width: 12rem; height: 40px; }
+.os-audio-dock-label {
+  min-width: 0;
+  max-width: 18rem;
+  font-size: .85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

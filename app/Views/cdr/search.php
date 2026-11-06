@@ -154,13 +154,3 @@ $xlsQs = http_build_query($exportBase + ['format' => 'excel']);
     <?php include __DIR__ . '/../partials/pagination.php'; ?>
 <?php endif; ?>
 </div>
-<script>
-(function () {
-    var all = document.getElementById('cdr-check-all');
-    if (!all) return;
-    all.addEventListener('change', function () {
-        document.querySelectorAll('.cdr-row-check').forEach(function (cb) { cb.checked = all.checked; });
-    });
-})();
-</script>
-<?php include __DIR__ . '/../partials/audio_player.php'; ?>

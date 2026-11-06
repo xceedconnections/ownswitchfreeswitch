@@ -175,6 +175,16 @@ if ($user && in_array($user['role'] ?? '', ['customer_owner', 'customer_tech'], 
     </div>
 </main>
 <?php endif; ?>
+<?php if ($user): ?>
+<div id="os-player" class="os-audio-dock" hidden>
+    <div class="os-audio-dock-inner">
+        <i class="bi bi-play-circle" aria-hidden="true"></i>
+        <span class="os-audio-dock-label" id="os-player-label">Recording</span>
+        <audio id="os-player-audio" controls preload="none"></audio>
+        <a id="os-player-dl" class="btn btn-outline-secondary btn-sm" href="#"><i class="bi bi-download me-1"></i>Download</a>
+    </div>
+</div>
+<?php endif; ?>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
 <script src="<?= e(asset('js/app.js')) ?>"></script>
 </body>

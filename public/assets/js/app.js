@@ -497,3 +497,85 @@
         apply();
     });
 })();
+
+/* Recording player and row checkboxes. Kept in this file because CSP blocks inline scripts. */
+(function () {
+    'use strict';
+
+    var bar = document.getElementById('os-player');
+    var audio = document.getElementById('os-player-audio');
+    var label = document.getElementById('os-player-label');
+    var dl = document.getElementById('os-player-dl');
+    if (bar && audio && label && dl) {
+        audio.addEventListener('error', function () {
+            label.textContent = 'This recording could not be played';
+        });
+        document.addEventListener('click', function (ev) {
+            var btn = ev.target.closest ? ev.target.closest('[data-os-play]') : null;
+            if (!btn) { return; }
+            ev.preventDefault();
+            var src = btn.getAttribute('data-src') || '';
+            var down = btn.getAttribute('data-download') || src;
+            var text = btn.getAttribute('data-label') || 'Recording';
+            if (!src) { return; }
+            bar.hidden = false;
+            document.body.style.paddingBottom = '4.5rem';
+            label.textContent = text;
+            dl.href = down;
+            audio.pause();
+            audio.src = src;
+            audio.load();
+            var play = audio.play();
+            if (play && play.catch) {
+                play.catch(function () {
+                    label.textContent = 'Press play on the player';
+                });
+            }
+        });
+    }
+
+    var cdrAll = document.getElementById('cdr-check-all');
+    if (cdrAll) {
+        cdrAll.addEventListener('change', function () {
+            document.querySelectorAll('.cdr-row-check').forEach(function (cb) { cb.checked = cdrAll.checked; });
+        });
+    }
+
+    var recForm = document.getElementById('rec-bulk-form');
+    var recAll = document.getElementById('rec-check-all');
+    var recBulk = document.getElementById('rec-delete-selected');
+    if (recForm) {
+        var syncRec = function () {
+            var boxes = recForm.querySelectorAll('.rec-row-check');
+            var n = 0;
+            boxes.forEach(function (cb) { if (cb.checked) { n++; } });
+            if (recBulk) {
+                recBulk.disabled = n === 0;
+                recBulk.textContent = n > 0 ? 'Delete selected (' + n + ')' : 'Delete selected';
+            }
+            if (recAll) { recAll.checked = boxes.length > 0 && n === boxes.length; }
+        };
+        if (recAll) {
+            recAll.addEventListener('change', function () {
+                recForm.querySelectorAll('.rec-row-check').forEach(function (cb) { cb.checked = recAll.checked; });
+                syncRec();
+            });
+        }
+        recForm.querySelectorAll('.rec-row-check').forEach(function (cb) {
+            cb.addEventListener('change', syncRec);
+        });
+        recForm.addEventListener('submit', function (ev) {
+            var btn = ev.submitter;
+            if (btn && btn.getAttribute('data-bulk') === '1' && !recForm.querySelector('.rec-row-check:checked')) {
+                ev.preventDefault();
+                ev.stopImmediatePropagation();
+                return;
+            }
+            var msg = btn && btn.getAttribute('data-confirm');
+            if (msg && !window.confirm(msg)) {
+                ev.preventDefault();
+                ev.stopImmediatePropagation();
+            }
+        });
+    }
+})();

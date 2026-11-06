@@ -68,46 +68,5 @@ $page = (int) ($result['page'] ?? 1);
     </table></div>
     </form>
     <?php include __DIR__ . '/../partials/pagination.php'; ?>
-    <script>
-    (function () {
-        var form = document.getElementById('rec-bulk-form');
-        var all = document.getElementById('rec-check-all');
-        var bulk = document.getElementById('rec-delete-selected');
-        if (!form) { return; }
-        var sync = function () {
-            var boxes = form.querySelectorAll('.rec-row-check');
-            var n = 0;
-            boxes.forEach(function (cb) { if (cb.checked) { n++; } });
-            if (bulk) {
-                bulk.disabled = n === 0;
-                bulk.textContent = n > 0 ? 'Delete selected (' + n + ')' : 'Delete selected';
-            }
-            if (all) { all.checked = boxes.length > 0 && n === boxes.length; }
-        };
-        if (all) {
-            all.addEventListener('change', function () {
-                form.querySelectorAll('.rec-row-check').forEach(function (cb) { cb.checked = all.checked; });
-                sync();
-            });
-        }
-        form.querySelectorAll('.rec-row-check').forEach(function (cb) {
-            cb.addEventListener('change', sync);
-        });
-        form.addEventListener('submit', function (ev) {
-            var btn = ev.submitter;
-            if (btn && btn.getAttribute('data-bulk') === '1' && !form.querySelector('.rec-row-check:checked')) {
-                ev.preventDefault();
-                ev.stopImmediatePropagation();
-                return;
-            }
-            var msg = btn && btn.getAttribute('data-confirm');
-            if (msg && !window.confirm(msg)) {
-                ev.preventDefault();
-                ev.stopImmediatePropagation();
-            }
-        });
-    })();
-    </script>
 <?php endif; ?>
 </div>
-<?php include __DIR__ . '/../partials/audio_player.php'; ?>

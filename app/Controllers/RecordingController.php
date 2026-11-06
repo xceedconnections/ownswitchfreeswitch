@@ -92,6 +92,9 @@ final class RecordingController extends BaseController
         }
         $download = $r->query('download') === '1';
         $svc->logAccess((int) $rec['id'], $uid, $download ? 'download' : 'play', $r->ip());
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
         $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
         $mime = ['wav' => 'audio/wav', 'mp3' => 'audio/mpeg', 'ogg' => 'audio/ogg'][$ext] ?? 'application/octet-stream';
         $size = (int) filesize($abs);
