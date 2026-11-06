@@ -42,11 +42,19 @@ final class HealthService
 
         $cg = App::config('app.integrations.cgrates');
         $c = new CgratesClient((string) $cg['url'], (string) $cg['user'], (string) $cg['password'], (string) $cg['tenant'], 2);
-        $r[] = $this->probe('CGRateS', $c->configured(), static fn () => $c->ping() ? 'Pong' : 'no pong');
+        if ($c->configured()) {
+            $r[] = $this->probe('CGRateS', true, static fn () => $c->ping() ? 'Pong' : 'no pong');
+        } else {
+            $r[] = ['component' => 'CGRateS', 'status' => 'ok', 'detail' => 'Not used. This portal rates the calls.'];
+        }
 
         $rt = App::config('app.integrations.rtpengine');
         $rc = new RtpengineClient((string) $rt['host'], (int) $rt['port']);
-        $r[] = $this->probe('RTPengine', $rc->configured(), static fn () => $rc->ping() ? 'pong' : 'no pong');
+        if ($rc->configured()) {
+            $r[] = $this->probe('RTPengine', true, static fn () => $rc->ping() ? 'pong' : 'no pong');
+        } else {
+            $r[] = ['component' => 'RTPengine', 'status' => 'ok', 'detail' => 'Not used. FreeSWITCH carries the audio.'];
+        }
 
         $fs = App::config('app.integrations.freeswitch');
         $ec = new EslClient((string) $fs['host'], (int) $fs['port'], (string) $fs['password']);
