@@ -22,11 +22,16 @@ ALTER TABLE rate_plan_tariffs
     ADD COLUMN plan_prefix_key BIGINT UNSIGNED
         GENERATED ALWAYS AS (IFNULL(plan_prefix_id, 0)) STORED AFTER plan_prefix_id;
 
+-- fk_rpt_plan uses uq_plan_prefix (the only index that starts with rate_plan_id).
+-- Add a replacement index first, then drop the old unique key.
 ALTER TABLE rate_plan_tariffs
-    DROP INDEX uq_plan_prefix;
+    ADD KEY ix_rpt_rate_plan (rate_plan_id);
 
 ALTER TABLE rate_plan_tariffs
     ADD UNIQUE KEY uq_plan_prefix_code (rate_plan_id, plan_prefix_key, prefix);
+
+ALTER TABLE rate_plan_tariffs
+    DROP INDEX uq_plan_prefix;
 
 ALTER TABLE rate_plan_tariffs
     ADD KEY ix_rpt_plan_prefix (plan_prefix_id);
