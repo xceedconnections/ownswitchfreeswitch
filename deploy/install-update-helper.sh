@@ -34,3 +34,8 @@ echo "Test: sudo -u ownswitch sudo -n /usr/local/sbin/ownswitch-update"
 echo "(that runs a full refresh — optional)"
 ls -la /usr/local/sbin/ownswitch-update
 [[ -f "$REFRESH" ]] && echo "refresh-ui: $REFRESH"
+
+# SSL + WebRTC helpers (Settings pages). Always refresh from this SRC.
+if [[ -f "$SRC/deploy/install-ssl-webrtc-helpers.sh" ]]; then
+  bash "$SRC/deploy/install-ssl-webrtc-helpers.sh"
+fi

@@ -32,6 +32,14 @@ else
   git -C "$SRC" reset --hard "origin/$BRANCH"
 fi
 
+# The bash process that started this update still has the old script in memory.
+# Re-exec the pulled refresh-ui so new steps (SSL helpers, migrate order, …) run.
+if [[ "${OWNSWITCH_REFRESH_REEXEC:-}" != "1" ]]; then
+  export OWNSWITCH_REFRESH_REEXEC=1
+  echo "Re-executing updated refresh-ui.sh…"
+  exec bash "$SRC/deploy/refresh-ui.sh"
+fi
+
 test -f "$SRC/public/index.php" || { echo "FATAL: $SRC/public/index.php missing"; exit 1; }
 test -f "$SRC/public/assets/css/app.css" || { echo "FATAL: $SRC/public/assets/css/app.css missing"; exit 1; }
 test -f "$SRC/app/Views/layout.php" || { echo "FATAL: layout.php missing"; exit 1; }
@@ -165,20 +173,8 @@ elif [[ -f "$SRC/deploy/templates/update/ownswitch-update.sh" ]]; then
     visudo -cf /etc/sudoers.d/ownswitch-update >/dev/null 2>&1 || true
   fi
 fi
-if [[ -f "$SRC/deploy/templates/ssl/ownswitch-ssl.sh" ]]; then
-  install -m 0755 "$SRC/deploy/templates/ssl/ownswitch-ssl.sh" /usr/local/sbin/ownswitch-ssl
-fi
-if [[ -f "$SRC/deploy/templates/webrtc/ownswitch-webrtc.sh" ]]; then
-  install -m 0755 "$SRC/deploy/templates/webrtc/ownswitch-webrtc.sh" /usr/local/sbin/ownswitch-webrtc
-fi
-if [[ -f /usr/local/sbin/ownswitch-ssl || -f /usr/local/sbin/ownswitch-webrtc ]]; then
-  cat >/etc/sudoers.d/ownswitch-ssl <<'EOF'
-# Ownswitch portal Settings → SSL and WebRTC
-ownswitch ALL=(root) NOPASSWD: /usr/local/sbin/ownswitch-ssl
-ownswitch ALL=(root) NOPASSWD: /usr/local/sbin/ownswitch-webrtc
-EOF
-  chmod 0440 /etc/sudoers.d/ownswitch-ssl
-  visudo -cf /etc/sudoers.d/ownswitch-ssl >/dev/null 2>&1 || true
+if [[ -f "$SRC/deploy/install-ssl-webrtc-helpers.sh" ]]; then
+  bash "$SRC/deploy/install-ssl-webrtc-helpers.sh" >/dev/null 2>&1 || true
 fi
 if [[ -f "$SRC/deploy/templates/fail2ban/ownswitch-portal.conf" ]]; then
   install -m 0644 "$SRC/deploy/templates/fail2ban/ownswitch-portal.conf" /etc/fail2ban/filter.d/ownswitch-portal.conf

@@ -30,7 +30,11 @@ if (($s['not_after'] ?? '') !== '') {
                 <p class="mb-0 text-muted">No Let's Encrypt certificate is installed yet.</p>
             <?php endif; ?>
             <?php if (empty($s['helper'])): ?>
-                <div class="alert alert-warning mt-3 mb-0">The SSL helper is not on this server yet. Open Version and click Update now, then come back.</div>
+                <div class="alert alert-warning mt-3 mb-0">
+                    The SSL helper is not installed on this server yet. As root run:
+                    <pre class="mb-0 mt-2 small">sudo bash /opt/ownswitch-src/deploy/install-ssl-webrtc-helpers.sh</pre>
+                    Or open Version and click Update now after the latest main is pulled, then reload this page.
+                </div>
             <?php endif; ?>
         </div>
     </div>

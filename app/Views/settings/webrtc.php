@@ -19,7 +19,11 @@ $s = $status;
     <?php endif; ?>
     <p class="small text-muted">Enable opens a local WebSocket for the dialer and allows the microphone on this site. Restarting the SIP profile drops current registrations for a few seconds. Calls from the dialer still follow each SIP user's CLI restriction lists.</p>
     <?php if (empty($s['helper'])): ?>
-        <div class="alert alert-warning">The WebRTC helper is not on this server yet. Open Version and click Update now, then come back.</div>
+        <div class="alert alert-warning">
+            The WebRTC helper is not installed on this server yet. As root run:
+            <pre class="mb-0 mt-2 small">sudo bash /opt/ownswitch-src/deploy/install-ssl-webrtc-helpers.sh</pre>
+            Or open Version and click Update now after the latest main is pulled, then reload this page.
+        </div>
     <?php endif; ?>
     <form method="post" action="<?= e(url('/settings/webrtc')) ?>" data-confirm="Enable WebRTC and restart the SIP profile? Current registrations drop for a few seconds.">
         <?= csrf_field() ?>
