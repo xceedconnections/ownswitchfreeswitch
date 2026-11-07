@@ -38,15 +38,29 @@ final class MyRatesController extends BaseController
             $plan = $st->fetch(\PDO::FETCH_ASSOC) ?: null;
 
             if ($plan && !empty($plan['rate_plan_id'])) {
-                $t = $this->db()->prepare(
-                    "SELECT prefix, destination, rate, initial_increment, subsequent_increment, connect_fee, status
-                     FROM rate_plan_tariffs
-                     WHERE rate_plan_id = ? AND status = 'active'
-                     ORDER BY LENGTH(prefix) DESC, prefix ASC
-                     LIMIT 5000"
-                );
-                $t->execute([(int) $plan['rate_plan_id']]);
-                $tariffs = $t->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+                try {
+                    $t = $this->db()->prepare(
+                        "SELECT t.prefix, t.destination, t.rate, t.initial_increment, t.subsequent_increment, t.connect_fee, t.status,
+                                pp.prefix AS dial_prefix, pp.name AS dial_name
+                         FROM rate_plan_tariffs t
+                         LEFT JOIN plan_prefixes pp ON pp.id = t.plan_prefix_id
+                         WHERE t.rate_plan_id = ? AND t.status = 'active'
+                         ORDER BY pp.prefix, LENGTH(t.prefix) DESC, t.prefix ASC
+                         LIMIT 5000"
+                    );
+                    $t->execute([(int) $plan['rate_plan_id']]);
+                    $tariffs = $t->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+                } catch (\Throwable) {
+                    $t = $this->db()->prepare(
+                        "SELECT prefix, destination, rate, initial_increment, subsequent_increment, connect_fee, status
+                         FROM rate_plan_tariffs
+                         WHERE rate_plan_id = ? AND status = 'active'
+                         ORDER BY LENGTH(prefix) DESC, prefix ASC
+                         LIMIT 5000"
+                    );
+                    $t->execute([(int) $plan['rate_plan_id']]);
+                    $tariffs = $t->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+                }
             }
 
             $o = $this->db()->prepare(

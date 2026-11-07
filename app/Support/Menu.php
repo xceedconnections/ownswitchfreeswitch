@@ -47,6 +47,7 @@ final class Menu
             ]],
             ['Rates', [
                 ['Plans', '/rate-plans', self::STAFF],
+                ['Plan Prefixes', '/plan-prefixes', self::STAFF],
                 ['Tariffs', '/tariffs', self::STAFF],
                 ['Prefixes', '/prefixes', self::STAFF],
                 ['Area Codes', '/area-codes', self::STAFF],

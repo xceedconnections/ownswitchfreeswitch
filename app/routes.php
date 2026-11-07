@@ -22,6 +22,7 @@ use Ownswitch\Controllers\LiveMetricsController;
 use Ownswitch\Controllers\ModuleScaffoldController;
 use Ownswitch\Controllers\MyRatesController;
 use Ownswitch\Controllers\PaymentController;
+use Ownswitch\Controllers\PlanPrefixController;
 use Ownswitch\Controllers\AreaCodeController;
 use Ownswitch\Controllers\AreaCodeImportController;
 use Ownswitch\Controllers\PrefixController;
@@ -125,6 +126,7 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
 
     // Rates
     $crud($r, '/rate-plans', new RatePlanController(), $STAFF);
+    $crud($r, '/plan-prefixes', new PlanPrefixController(), $STAFF);
     $crud($r, '/prefixes', new PrefixController(), $STAFF);
     $areaCodes = new AreaCodeController();
     $r->post('/area-codes/bulk-delete', [$areaCodes, 'bulkDestroy'], [$STAFF]);

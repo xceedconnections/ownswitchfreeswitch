@@ -47,7 +47,12 @@ final class RouteSimulator
             return $out;
         }
 
-        $cands = Destination::candidates($dst);
+        $routeDst = $this->resolver->destinationAfterPlanPrefix($customerId, $dst);
+        if ($routeDst !== $dst) {
+            $out['routed_destination'] = $routeDst;
+            $out['notes'][] = 'Plan prefix removed. Rate and trunk match on ' . $routeDst . '.';
+        }
+        $cands = Destination::candidates($routeDst);
         $in = Destination::placeholders($cands);
         $pol = $this->pdo->prepare("SELECT prefix, action, note FROM destination_policies WHERE (customer_id IS NULL OR customer_id = ?) AND prefix IN ({$in}) ORDER BY LENGTH(prefix) DESC LIMIT 1");
         $pol->execute([$customerId, ...$cands]);
@@ -123,7 +128,7 @@ final class RouteSimulator
             $out['notes'][] = 'Using Trunk Group member trunks (catch-all).';
         }
         foreach ($rules as &$rr) {
-            $dial = $dst;
+            $dial = $routeDst;
             $rawRem = (string) ($rr['remove_prefix'] ?? '');
             $remList = [];
             foreach (preg_split('/[\s,;|]+/', $rawRem) ?: [] as $p) {

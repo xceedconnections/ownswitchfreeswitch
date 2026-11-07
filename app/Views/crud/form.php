@@ -113,8 +113,10 @@ $formExtra = $sipAuthForm ? ' data-os-sip-auth' : '';
                         <?php if ($type === 'select'): ?>
                             <select class="form-select<?= $err ? ' is-invalid' : '' ?>" id="<?= e($id) ?>" name="<?= e($name) ?>"<?= $readonly ? ' disabled' : '' ?>>
                                 <?php if (empty($f['required']) && !isset($f['options'][''])): ?><option value="">—</option><?php endif; ?>
-                                <?php foreach ($f['options'] as $k => $label): ?>
-                                    <option value="<?= e($k) ?>"<?= ((string) $val === (string) $k) ? ' selected' : '' ?>><?= e($label) ?></option>
+                                <?php foreach ($f['options'] as $k => $label):
+                                    $optPlan = $f['option_data'][$k]['plan'] ?? $f['option_data'][(string) $k]['plan'] ?? null;
+                                    ?>
+                                    <option value="<?= e($k) ?>"<?= $optPlan !== null ? ' data-plan="' . e((string) $optPlan) . '"' : '' ?><?= ((string) $val === (string) $k) ? ' selected' : '' ?>><?= e($label) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         <?php elseif ($type === 'multiselect'):

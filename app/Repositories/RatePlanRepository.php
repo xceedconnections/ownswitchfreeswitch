@@ -31,7 +31,13 @@ final class RatePlanRepository extends BaseRepository
         if ($plan === null) {
             throw new \RuntimeException('Rate plan not found');
         }
-        $st = $this->pdo->prepare('SELECT prefix, rate, initial_increment, subsequent_increment, connect_fee, status FROM rate_plan_tariffs WHERE rate_plan_id = ? ORDER BY prefix');
+        $cols = 'prefix, rate, initial_increment, subsequent_increment, connect_fee, status';
+        try {
+            $this->pdo->query('SELECT plan_prefix_id FROM rate_plan_tariffs LIMIT 0');
+            $cols = 'plan_prefix_id, ' . $cols;
+        } catch (\Throwable) {
+        }
+        $st = $this->pdo->prepare("SELECT {$cols} FROM rate_plan_tariffs WHERE rate_plan_id = ? ORDER BY prefix");
         $st->execute([$planId]);
         $tariffs = $st->fetchAll(PDO::FETCH_ASSOC);
         $defaults = array_intersect_key($plan, array_flip(['default_rate', 'initial_increment', 'subsequent_increment', 'connect_fee', 'min_billable_seconds', 'charge_connect_on_zero', 'currency']));

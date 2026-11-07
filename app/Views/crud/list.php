@@ -203,7 +203,7 @@ $ownerFilter = $ownerFilter ?? null;
                     <?php endif; ?>
                     <?php if ($bulkRateUpdate): ?>
                     <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#os-batch-rate-modal">
-                        <i class="bi bi-percent me-1"></i>Batch rate update
+                        <i class="bi bi-percent me-1"></i>Batch update
                     </button>
                     <?php endif; ?>
                     <span class="small text-muted">Select rows below<?= $bulkDelete ? ', or delete everything that matches the current filter' : '' ?>.</span>
@@ -254,16 +254,10 @@ $ownerFilter = $ownerFilter ?? null;
             </table>
         </div>
         <?php if (($bulkDelete || $bulkRateUpdate) && $canWrite): ?></form>
-            <script>
-            (function () {
-                var all = document.getElementById('os-bulk-all');
-                if (!all) return;
-                all.addEventListener('change', function () {
-                    document.querySelectorAll('.os-bulk-id').forEach(function (cb) { cb.checked = all.checked; });
-                });
-            })();
-            </script>
-            <?php if ($bulkRateUpdate): ?>
+            <?php if ($bulkRateUpdate):
+                $batchPriceLabel = (string) ($batchPriceLabel ?? 'Sell price');
+                $batchTrunkGroups = $batchTrunkGroups ?? null;
+            ?>
             <div class="modal fade" id="os-batch-rate-modal" tabindex="-1" aria-labelledby="os-batch-rate-title" aria-hidden="true">
                 <div class="modal-dialog">
                     <form method="post" action="<?= e(url($base . '/bulk-rate-update')) ?>" class="modal-content" id="os-batch-rate-form">
@@ -274,52 +268,61 @@ $ownerFilter = $ownerFilter ?? null;
                         <?php endforeach; ?>
                         <div id="os-batch-rate-ids"></div>
                         <div class="modal-header">
-                            <h5 class="modal-title" id="os-batch-rate-title">Batch rate update</h5>
+                            <h5 class="modal-title" id="os-batch-rate-title">Batch update</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
-                            <p class="small text-muted">Applies to <strong>selected rows</strong> on this page. Optional prefix filter further narrows the selection.</p>
+                            <p class="small text-muted">Updates the selected rows on this page. Leave a field blank to keep its current value. Prefix filter keeps only the codes you name.</p>
+                            <?php if (is_array($batchTrunkGroups)): ?>
                             <div class="mb-3">
-                                <label class="form-label" for="rate_mode">Mode</label>
-                                <select name="rate_mode" id="rate_mode" class="form-select form-select-sm" required>
-                                    <option value="percent">Percent change (e.g. 10 = +10%, -5 = −5%)</option>
-                                    <option value="absolute">Flat new rate (absolute)</option>
+                                <label class="form-label" for="batch_routing_plan_id">Trunk groups</label>
+                                <select name="routing_plan_id" id="batch_routing_plan_id" class="form-select form-select-sm">
+                                    <?php foreach ($batchTrunkGroups as $k => $label): ?>
+                                        <option value="<?= e((string) $k) ?>"><?= e((string) $label) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <?php endif; ?>
+                            <div class="mb-3">
+                                <label class="form-label" for="rate_mode"><?= e($batchPriceLabel) ?></label>
+                                <select name="rate_mode" id="rate_mode" class="form-select form-select-sm">
+                                    <option value="percent">Percent change (10 = +10%, -5 = −5%)</option>
+                                    <option value="absolute">Replace with this price</option>
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label" for="rate_value">Value</label>
-                                <input type="text" class="form-control form-control-sm os-mono" name="rate_value" id="rate_value" required placeholder="10 or 0.0125" pattern="-?\d+(\.\d{1,8})?">
+                                <label class="form-label" for="rate_value"><?= e($batchPriceLabel) ?> value</label>
+                                <input type="text" class="form-control form-control-sm os-mono" name="rate_value" id="rate_value" placeholder="Blank leaves the price unchanged" inputmode="decimal">
+                            </div>
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label" for="batch_initial_increment">Initial block</label>
+                                    <input type="text" class="form-control form-control-sm os-mono" name="initial_increment" id="batch_initial_increment" placeholder="Seconds" inputmode="numeric" maxlength="5">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label" for="batch_subsequent_increment">Billing block</label>
+                                    <input type="text" class="form-control form-control-sm os-mono" name="subsequent_increment" id="batch_subsequent_increment" placeholder="Seconds" inputmode="numeric" maxlength="5">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="prefix_filter">Prefix filter (optional)</label>
+                                <input type="text" class="form-control form-control-sm os-mono" name="prefix_filter" id="prefix_filter" placeholder="203" maxlength="32">
                             </div>
                             <div class="mb-0">
-                                <label class="form-label" for="prefix_filter">Prefix filter (optional)</label>
-                                <input type="text" class="form-control form-control-sm os-mono" name="prefix_filter" id="prefix_filter" placeholder="e.g. 1213" maxlength="32">
+                                <label class="form-label" for="prefix_mode">Prefix match</label>
+                                <select name="prefix_mode" id="prefix_mode" class="form-select form-select-sm">
+                                    <option value="starts">Starts with (203 matches 203, 2031, 2035)</option>
+                                    <option value="exact">Exact code only</option>
+                                </select>
                             </div>
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" class="btn btn-primary btn-sm">Update rates</button>
+                            <button type="submit" class="btn btn-primary btn-sm">Update selected</button>
                         </div>
                     </form>
                 </div>
             </div>
-            <script>
-            (function () {
-                var modal = document.getElementById('os-batch-rate-modal');
-                if (!modal) return;
-                modal.addEventListener('show.bs.modal', function () {
-                    var box = document.getElementById('os-batch-rate-ids');
-                    if (!box) return;
-                    box.innerHTML = '';
-                    document.querySelectorAll('.os-bulk-id:checked').forEach(function (cb) {
-                        var i = document.createElement('input');
-                        i.type = 'hidden';
-                        i.name = 'ids[]';
-                        i.value = cb.value;
-                        box.appendChild(i);
-                    });
-                });
-            })();
-            </script>
             <?php endif; ?>
         <?php endif; ?>
         <?php include __DIR__ . '/../partials/pagination.php'; ?>

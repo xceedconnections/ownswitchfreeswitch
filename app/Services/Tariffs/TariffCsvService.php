@@ -220,7 +220,7 @@ final class TariffCsvService
                 $repo->insert($cols);
             }
         } else {
-            $find = $this->db->prepare('SELECT id FROM rate_plan_tariffs WHERE rate_plan_id = ? AND prefix = ? LIMIT 1');
+            $find = $this->db->prepare('SELECT id FROM rate_plan_tariffs WHERE rate_plan_id = ? AND prefix = ? AND plan_prefix_id IS NULL LIMIT 1');
             $find->execute([$ownerId, $cols['prefix']]);
             $id = $find->fetchColumn();
             $repo = TariffRepository::customer($this->db);

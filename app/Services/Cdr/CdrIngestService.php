@@ -99,7 +99,11 @@ final class CdrIngestService
                     'rated_at' => gmdate('Y-m-d H:i:s.v'), 'settlement_status' => 'settled', 'currency' => $crate['currency'],
                 ]);
                 $carrierTotal = '0.000000';
-                if ($d['carrier_trunk_id'] !== null && ($k = $this->resolver->carrier($d['carrier_trunk_id'], $dst)) !== null) {
+                $billDst = (string) ($crate['routed_destination'] ?? $dst);
+                if ($billDst === '') {
+                    $billDst = $dst;
+                }
+                if ($d['carrier_trunk_id'] !== null && ($k = $this->resolver->carrier($d['carrier_trunk_id'], $billDst)) !== null) {
                     $kr = $this->rating->rate($k['rate'], $k['initial'], $k['subsequent'], $duration, $k['connect_fee']);
                     $carrierTotal = $kr['total'];
                     $row = array_merge($row, [

@@ -93,10 +93,12 @@ $fmtLim = static function ($v): string {
         <?php else: ?>
             <div class="table-responsive">
                 <table class="table table-sm table-hover mb-0 os-table">
-                    <thead><tr><th>Prefix</th><th>Destination</th><th class="os-num">Rate</th><th class="os-num">I/S</th><th class="os-num">Connect</th></tr></thead>
+                    <thead><tr><th>Prefix</th><th>Name</th><th>Code</th><th>Destination</th><th class="os-num">Rate</th><th class="os-num">I/S</th><th class="os-num">Connect</th></tr></thead>
                     <tbody>
                     <?php foreach ($tariffs as $row): ?>
                         <tr>
+                            <td class="os-mono"><?= e((string) (($row['dial_prefix'] ?? '') !== '' ? $row['dial_prefix'] : '—')) ?></td>
+                            <td><?= e((string) (($row['dial_name'] ?? '') !== '' ? $row['dial_name'] : '—')) ?></td>
                             <td class="os-mono"><?= e((string) $row['prefix']) ?></td>
                             <td><?= e((string) ($row['destination'] ?? '—')) ?></td>
                             <td class="os-num os-mono"><?= e((string) $row['rate']) ?></td>

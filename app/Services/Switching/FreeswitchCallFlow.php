@@ -63,12 +63,14 @@ final class FreeswitchCallFlow
         }
 
         $cid = (int) ($account['customer_id'] ?? 0);
-        if ($this->destinationBlocked($cid, $dest)) {
+        $resolver = new RateResolver($this->db, $settings);
+        $routeDest = $cid > 0 ? $resolver->destinationAfterPlanPrefix($cid, $dest) : $dest;
+        if ($this->destinationBlocked($cid, $routeDest)) {
             return $this->reject('403', 'CALL_REJECTED');
         }
 
         $groupId = (int) ($account['dnc_group_id'] ?? 0);
-        if ($groupId > 0 && $this->dncHit($groupId, $dest)) {
+        if ($groupId > 0 && $this->dncHit($groupId, $routeDest)) {
             return $this->reject('403', 'CALL_REJECTED');
         }
 
@@ -81,10 +83,12 @@ final class FreeswitchCallFlow
             return $this->reject('402', 'CALL_REJECTED');
         }
 
-        $resolver = new RateResolver($this->db, $settings);
         $rate = $cid > 0 ? $resolver->customer($cid, $dest) : null;
         if ($rate === null) {
             return $this->reject('404', 'NO_ROUTE_DESTINATION');
+        }
+        if (!empty($rate['routed_destination'])) {
+            $routeDest = (string) $rate['routed_destination'];
         }
         if ($this->userOverCap($account, $rate)) {
             return $this->reject('403', 'CALL_REJECTED');
@@ -95,7 +99,7 @@ final class FreeswitchCallFlow
         if ($planId <= 0 && !empty($rate['routing_plan_id'])) {
             $planId = (int) $rate['routing_plan_id'];
         }
-        $trunks = $this->trunksFor($planId, $dest);
+        $trunks = $this->trunksFor($planId, $routeDest);
         if ($trunks === []) {
             return $this->reject('503', 'NORMAL_TEMPORARY_FAILURE');
         }
@@ -116,7 +120,7 @@ final class FreeswitchCallFlow
         $primaryTrunk = null;
         $chosenCid = '';
         foreach ($trunks as $t) {
-            $cidNum = $this->outboundCallerId($account, $t, $inboundCid, $dest);
+            $cidNum = $this->outboundCallerId($account, $t, $inboundCid, $routeDest);
             if ($this->callerIdLengthReject($account, $t, $cidNum)) {
                 continue; // try next trunk / reject if none remain
             }
@@ -124,7 +128,7 @@ final class FreeswitchCallFlow
                 $primaryTrunk = $t;
                 $chosenCid = $cidNum;
             }
-            $bridges[] = $this->bridgeLeg($account, $t, $dest, $userFmt, $cidNum);
+            $bridges[] = $this->bridgeLeg($account, $t, $routeDest, $userFmt, $cidNum);
         }
         if ($bridges === []) {
             return $this->reject('484', 'CALL_REJECTED');

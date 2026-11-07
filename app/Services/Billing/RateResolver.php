@@ -23,7 +23,8 @@ final class RateResolver
 
     /**
      * @return array{rate:string,initial:int,subsequent:int,connect_fee:string,min_billable:int,charge_connect_on_zero:bool,
-     *   prefix:string,destination:?string,source:string,rate_plan_id:int,version_id:?int,currency:string,routing_plan_id:?int}|null
+     *   prefix:string,destination:?string,source:string,rate_plan_id:int,version_id:?int,currency:string,routing_plan_id:?int,
+     *   dial_prefix:string,plan_prefix_name:string,plan_prefix_id:?int,routed_destination:string}|null
      */
     public function customer(int $customerId, string $dst): ?array
     {
@@ -41,7 +42,21 @@ final class RateResolver
         }
         $defI = $this->positive($plan['initial_increment'], $this->settings->int('default_customer_initial', 6));
         $defS = $this->positive($plan['subsequent_increment'], $this->settings->int('default_customer_subsequent', 6));
-        $cands = Destination::candidates($dst);
+        $dial = $this->matchPlanPrefix((int) $planId, $dst);
+        if ($dial !== null && $dial['remainder'] === '') {
+            return null;
+        }
+        $lookup = $dst;
+        $prefixSql = '';
+        $prefixParams = [];
+        if ($dial !== null) {
+            $lookup = $dial['remainder'];
+            $prefixSql = ' AND plan_prefix_id = ?';
+            $prefixParams = [$dial['id']];
+        } elseif ($this->planPrefixColumn()) {
+            $prefixSql = ' AND plan_prefix_id IS NULL';
+        }
+        $cands = Destination::candidates($lookup);
         if ($cands === []) {
             return null;
         }
@@ -50,8 +65,9 @@ final class RateResolver
 
         $row = $this->longest(
             "SELECT * FROM rate_plan_tariffs WHERE rate_plan_id = ? AND status = 'active' AND prefix IN ({$in})
+             {$prefixSql}
              AND (effective_from IS NULL OR effective_from <= ?) AND (effective_to IS NULL OR effective_to > ?)",
-            [(int) $planId, ...$cands, $now, $now]
+            [(int) $planId, ...$cands, ...$prefixParams, $now, $now]
         );
         $source = 'tariff';
         if ($row === null) {
@@ -63,10 +79,14 @@ final class RateResolver
         }
         $versionId = $this->versionId((int) $planId);
         if ($row === null) {
-            if ($plan['default_rate'] === null) {
+            if ($plan['default_rate'] === null || $dial !== null) {
                 return null;
             }
-            return $this->shape((string) $plan['default_rate'], $defI, $defS, (string) $plan['connect_fee'], $plan, '', null, 'plan_default', $versionId);
+            return $this->annotate(
+                $this->shape((string) $plan['default_rate'], $defI, $defS, (string) $plan['connect_fee'], $plan, '', null, 'plan_default', $versionId),
+                null,
+                $lookup
+            );
         }
         $shaped = $this->shape(
             (string) $row['rate'],
@@ -78,7 +98,33 @@ final class RateResolver
         if ($source === 'tariff' && !empty($row['routing_plan_id'])) {
             $shaped['routing_plan_id'] = (int) $row['routing_plan_id'];
         }
-        return $shaped;
+        return $this->annotate($shaped, $dial, $lookup);
+    }
+
+    /**
+     * Digits used for trunk matching after a plan prefix is removed.
+     * Returns the original number when the plan has no matching dial prefix.
+     */
+    public function destinationAfterPlanPrefix(int $customerId, string $dst): string
+    {
+        if ($customerId <= 0 || $dst === '') {
+            return $dst;
+        }
+        try {
+            $c = $this->pdo->prepare('SELECT rate_plan_id FROM customers WHERE id = ?');
+            $c->execute([$customerId]);
+            $planId = $c->fetchColumn();
+        } catch (\Throwable) {
+            return $dst;
+        }
+        if (!$planId) {
+            return $dst;
+        }
+        $dial = $this->matchPlanPrefix((int) $planId, $dst);
+        if ($dial === null || $dial['remainder'] === '') {
+            return $dst;
+        }
+        return $dial['remainder'];
     }
 
     /**
@@ -118,6 +164,70 @@ final class RateResolver
             ];
         }
         return null;
+    }
+
+    /**
+     * Longest active dial prefix on this plan that the number starts with.
+     *
+     * @return array{id:int,prefix:string,name:string,remainder:string}|null
+     */
+    private function matchPlanPrefix(int $planId, string $dst): ?array
+    {
+        if ($planId <= 0 || $dst === '' || !$this->planPrefixColumn()) {
+            return null;
+        }
+        try {
+            $st = $this->pdo->prepare(
+                "SELECT id, prefix, name FROM plan_prefixes
+                 WHERE rate_plan_id = ? AND status = 'active'
+                 ORDER BY CHAR_LENGTH(prefix) DESC, id ASC"
+            );
+            $st->execute([$planId]);
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable) {
+            return null;
+        }
+        foreach ($rows as $row) {
+            $prefix = (string) ($row['prefix'] ?? '');
+            if ($prefix !== '' && str_starts_with($dst, $prefix)) {
+                return [
+                    'id' => (int) $row['id'],
+                    'prefix' => $prefix,
+                    'name' => (string) ($row['name'] ?? ''),
+                    'remainder' => substr($dst, strlen($prefix)),
+                ];
+            }
+        }
+        return null;
+    }
+
+    private function planPrefixColumn(): bool
+    {
+        static $ok = null;
+        if ($ok !== null) {
+            return $ok;
+        }
+        try {
+            $this->pdo->query('SELECT plan_prefix_id FROM rate_plan_tariffs LIMIT 0');
+            $ok = true;
+        } catch (\Throwable) {
+            $ok = false;
+        }
+        return $ok;
+    }
+
+    /**
+     * @param array<string,mixed> $shaped
+     * @param array{id:int,prefix:string,name:string,remainder:string}|null $dial
+     * @return array<string,mixed>
+     */
+    private function annotate(array $shaped, ?array $dial, string $lookup): array
+    {
+        $shaped['dial_prefix'] = $dial['prefix'] ?? '';
+        $shaped['plan_prefix_name'] = $dial['name'] ?? '';
+        $shaped['plan_prefix_id'] = $dial['id'] ?? null;
+        $shaped['routed_destination'] = $lookup;
+        return $shaped;
     }
 
     /** Pick the longest-prefix row among query results. @param list<mixed> $params */

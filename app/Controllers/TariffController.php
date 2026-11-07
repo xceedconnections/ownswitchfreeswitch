@@ -26,7 +26,7 @@ final class TariffController extends CrudController
         $this->plural = $carrier ? 'Provider Rates' : 'Tariffs';
         $this->emptyHint = $carrier
             ? 'No provider rates. Magnus: Provider + Destination + buy price.'
-            : 'No tariffs yet. Magnus: Plan + Destination + Trunk group + sell price + blocks.';
+            : 'No tariffs yet. Choose a plan, then a plan prefix (1 · CC), then a code such as 203.';
     }
 
     protected function repo(): BaseRepository
@@ -60,18 +60,51 @@ final class TariffController extends CrudController
                 'readonly_on_edit' => true,
                 'list' => true,
             ],
-            [
+        ];
+        if (!$carrier) {
+            $planPrefixes = [];
+            $planPrefixData = [];
+            try {
+                $pp = $this->db()->query(
+                    'SELECT pp.id, pp.prefix, pp.name, pp.rate_plan_id
+                     FROM plan_prefixes pp
+                     ORDER BY pp.prefix, pp.name
+                     LIMIT 2000'
+                )->fetchAll();
+                foreach ($pp as $row) {
+                    $id = (string) $row['id'];
+                    $planPrefixes[$id] = (string) $row['prefix'] . ' · ' . (string) $row['name'];
+                    $planPrefixData[$id] = ['plan' => (string) $row['rate_plan_id']];
+                }
+            } catch (\Throwable) {
+                $planPrefixes = [];
+            }
+            $fields[] = [
+                'name' => 'plan_prefix_id',
+                'label' => 'Plan prefix',
+                'type' => 'select',
+                'required' => false,
+                'options' => $planPrefixes,
+                'option_data' => $planPrefixData,
+                'list' => true,
+                'help' => $planPrefixes === []
+                    ? 'Add a plan prefix first (Rates → Plan Prefixes), for example prefix 1 named CC.'
+                    : 'Required on a new tariff. Pick the plan first, then one of its prefixes (1 · CC).',
+            ];
+        }
+        $fields[] = [
                 'name' => 'prefix',
-                'label' => 'Destination',
+                'label' => $carrier ? 'Destination' : 'Code',
                 'type' => 'select',
                 'required' => true,
                 'options' => $prefixes,
                 'readonly_on_edit' => true,
                 'list' => true,
                 'wide' => true,
-                'help' => $prefixes === [] ? 'Create Prefixes first (Rates → Prefixes).' : 'From Rates → Prefixes.',
-            ],
-        ];
+                'help' => $prefixes === []
+                    ? 'Create Prefixes first (Rates → Prefixes).'
+                    : ($carrier ? 'From Rates → Prefixes.' : 'Digits after the plan prefix, from Prefixes. Example: 203.'),
+            ];
         if (!$carrier) {
             $groups = ['' => '— use user’s Trunk Group —'];
             foreach ($this->db()->query('SELECT id, name FROM routing_plans ORDER BY name LIMIT 500')->fetchAll() as $g) {
@@ -116,6 +149,30 @@ final class TariffController extends CrudController
         if ($this->kind === 'customer') {
             $tg = $data['routing_plan_id'] ?? null;
             $data['routing_plan_id'] = ($tg === null || $tg === '') ? null : (int) $tg;
+            $planId = (int) ($data['rate_plan_id'] ?? ($existing['rate_plan_id'] ?? 0));
+            $ppid = $data['plan_prefix_id'] ?? null;
+            if ($ppid === null || $ppid === '') {
+                if ($existing === null) {
+                    throw new \DomainException('Select a plan prefix.');
+                }
+                $data['plan_prefix_id'] = $existing['plan_prefix_id'] ?? null;
+                $ppid = $data['plan_prefix_id'];
+            }
+            if ($ppid === null || $ppid === '') {
+                $ppid = null;
+            }
+            if ($ppid !== null) {
+                $st = $this->db()->prepare('SELECT rate_plan_id, prefix, name, status FROM plan_prefixes WHERE id = ? LIMIT 1');
+                $st->execute([(int) $ppid]);
+                $pp = $st->fetch(\PDO::FETCH_ASSOC);
+                if (!$pp || (int) $pp['rate_plan_id'] !== $planId) {
+                    throw new \DomainException('That plan prefix does not belong to the selected plan.');
+                }
+                if (strtolower((string) $pp['status']) !== 'active') {
+                    throw new \DomainException('That plan prefix is inactive.');
+                }
+                $data['plan_prefix_id'] = (int) $ppid;
+            }
         }
         if (($data['initial_increment'] ?? null) === null || $data['initial_increment'] === '') {
             $data['initial_increment'] = 6;
@@ -167,11 +224,23 @@ final class TariffController extends CrudController
         foreach ($this->db()->query($sql)->fetchAll() as $x) {
             $opts[(string) $x['id']] = (string) $x['name'];
         }
-        return [
+        $extra = [
             'bulkDelete' => true,
             'bulkRateUpdate' => true,
             'ownerFilter' => ['name' => $ownerKey, 'label' => $ownerLabel, 'options' => $opts],
+            'batchPriceLabel' => $this->kind === 'carrier' ? 'Buy price' : 'Sell price',
         ];
+        if ($this->kind === 'customer') {
+            $groups = ['' => 'Leave unchanged', '0' => 'Use user’s trunk group'];
+            try {
+                foreach ($this->db()->query('SELECT id, name FROM routing_plans ORDER BY name LIMIT 500')->fetchAll() as $g) {
+                    $groups[(string) $g['id']] = (string) $g['name'];
+                }
+            } catch (\Throwable) {
+            }
+            $extra['batchTrunkGroups'] = $groups;
+        }
+        return $extra;
     }
 
     /** Mass-edit rates: percent change and/or absolute new rate on selected rows. */
@@ -191,6 +260,11 @@ final class TariffController extends CrudController
         $mode = (string) $r->input('rate_mode', 'percent');
         $value = trim((string) $r->input('rate_value', ''));
         $prefix = trim((string) $r->input('prefix_filter', ''));
+        $prefixMode = (string) $r->input('prefix_mode', 'starts');
+        $initial = trim((string) $r->input('initial_increment', ''));
+        $subsequent = trim((string) $r->input('subsequent_increment', ''));
+        $trunkRaw = $r->input('routing_plan_id', null);
+        $trunk = is_string($trunkRaw) ? $trunkRaw : null;
         $filters = [];
         foreach ($this->filterColumns() as $c) {
             $v = $r->input($c);
@@ -215,9 +289,15 @@ final class TariffController extends CrudController
                 $this->kind,
                 $this->scope($r),
                 $idList,
-                $mode,
-                $value,
-                $prefix !== '' ? $prefix : null,
+                [
+                    'rate_mode' => $mode,
+                    'rate_value' => $value,
+                    'prefix_filter' => $prefix !== '' ? $prefix : null,
+                    'prefix_mode' => $prefixMode === 'exact' ? 'exact' : 'starts',
+                    'routing_plan_id' => $trunk,
+                    'initial_increment' => $initial !== '' ? $initial : null,
+                    'subsequent_increment' => $subsequent !== '' ? $subsequent : null,
+                ],
             );
         } catch (\InvalidArgumentException $e) {
             return $this->redirect($r, $this->base, $e->getMessage(), 'danger');
@@ -234,7 +314,9 @@ final class TariffController extends CrudController
             }
         }
         $this->audit($r, 'tariff_bulk_rate_update', $this->kind === 'carrier' ? 'carrier_tariffs' : 'rate_plan_tariffs', null, null, [
-            'mode' => $mode, 'value' => $value, 'prefix_filter' => $prefix, 'ids' => $idList, 'updated' => $res['updated'],
+            'mode' => $mode, 'value' => $value, 'prefix_filter' => $prefix, 'prefix_mode' => $prefixMode,
+            'routing_plan_id' => $trunk, 'initial_increment' => $initial, 'subsequent_increment' => $subsequent,
+            'ids' => $idList, 'updated' => $res['updated'],
         ]);
         $qs = http_build_query(array_filter($filters + ($q !== '' ? ['q' => $q] : []), static fn ($v) => $v !== null && $v !== ''));
         return $this->redirect(

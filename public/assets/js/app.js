@@ -578,4 +578,68 @@
             }
         });
     }
+
+    var bulkAll = document.getElementById('os-bulk-all');
+    var bulkBoxes = document.querySelectorAll('.os-bulk-id');
+    if (bulkAll && bulkBoxes.length) {
+        var syncBulkAll = function () {
+            var n = 0;
+            bulkBoxes.forEach(function (cb) { if (cb.checked) { n++; } });
+            bulkAll.checked = n === bulkBoxes.length;
+            bulkAll.indeterminate = n > 0 && n < bulkBoxes.length;
+        };
+        bulkAll.addEventListener('change', function () {
+            bulkBoxes.forEach(function (cb) { cb.checked = bulkAll.checked; });
+            bulkAll.indeterminate = false;
+        });
+        bulkBoxes.forEach(function (cb) {
+            cb.addEventListener('change', syncBulkAll);
+        });
+    }
+
+    var batchForm = document.getElementById('os-batch-rate-form');
+    if (batchForm) {
+        batchForm.addEventListener('submit', function (ev) {
+            var box = document.getElementById('os-batch-rate-ids');
+            if (!box) { return; }
+            while (box.firstChild) { box.removeChild(box.firstChild); }
+            var n = 0;
+            document.querySelectorAll('.os-bulk-id:checked').forEach(function (cb) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'ids[]';
+                input.value = cb.value;
+                box.appendChild(input);
+                n++;
+            });
+            if (n === 0) {
+                ev.preventDefault();
+                window.alert('Select at least one row to update.');
+            }
+        });
+    }
+
+    var planSel = document.getElementById('f_rate_plan_id');
+    var prefixSel = document.getElementById('f_plan_prefix_id');
+    if (planSel && prefixSel) {
+        var syncPlanPrefix = function () {
+            var pid = String(planSel.value || '');
+            Array.prototype.forEach.call(prefixSel.options, function (opt) {
+                if (!opt.value) {
+                    opt.hidden = false;
+                    opt.disabled = false;
+                    return;
+                }
+                var ok = opt.getAttribute('data-plan') === pid;
+                opt.hidden = !ok;
+                opt.disabled = !ok;
+            });
+            var selected = prefixSel.options[prefixSel.selectedIndex];
+            if (!selected || selected.disabled) {
+                prefixSel.value = '';
+            }
+        };
+        planSel.addEventListener('change', syncPlanPrefix);
+        syncPlanPrefix();
+    }
 })();
