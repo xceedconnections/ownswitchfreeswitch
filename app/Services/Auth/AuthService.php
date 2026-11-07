@@ -74,15 +74,10 @@ final class AuthService
     /** @return list<string> policy violations */
     public static function passwordProblems(string $password): array
     {
-        $min = (int) App::config('security.auth.min_password_length', 12);
-        $p = [];
-        if (mb_strlen($password) < $min) {
-            $p[] = "Password must be at least {$min} characters.";
+        if ($password === '') {
+            return ['Password is required.'];
         }
-        if (!preg_match('/[a-z]/', $password) || !preg_match('/[A-Z]/', $password) || !preg_match('/\d/', $password)) {
-            $p[] = 'Password must contain upper-case, lower-case letters and a digit.';
-        }
-        return $p;
+        return [];
     }
 
     public function changePassword(int $userId, string $current, string $new): array

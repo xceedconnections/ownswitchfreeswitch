@@ -96,7 +96,8 @@ final class CsrfTest extends TestCase
 
     public function testPasswordsAreHashedAndPolicyEnforced(): void
     {
-        $this->assertTrue(count(AuthService::passwordProblems('short')) > 0);
+        $this->assertSame(['Password is required.'], AuthService::passwordProblems(''));
+        $this->assertSame([], AuthService::passwordProblems('short'));
         $this->assertSame([], AuthService::passwordProblems('Correct-Horse-Battery-9'));
         $h = password_hash('Correct-Horse-Battery-9', PASSWORD_DEFAULT);
         $this->assertTrue(password_verify('Correct-Horse-Battery-9', $h));

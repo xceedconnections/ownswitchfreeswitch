@@ -28,6 +28,8 @@ final class SipUserController extends CrudController
     protected string $plural = 'SIP Users';
     /** Customers may view SIP users only — staff/reseller create and edit. */
     protected array $writeRoles = ['super_admin', 'admin', 'reseller'];
+    /** @var list<int>|null */
+    private ?array $cliRestrictionIds = null;
     protected string $emptyHint = 'No SIP users. Create an account so a phone or PBX can register to FreeSWITCH.';
 
     private ?string $plainPassword = null;
@@ -142,7 +144,7 @@ final class SipUserController extends CrudController
                 'label' => 'SIP password',
                 'type' => 'password',
                 'max' => 128,
-                'help' => 'Required for Dynamic mode. Blank = auto-generate (create) or keep current (edit). Min 12 if typed. Hidden for IP based.',
+                'help' => 'Required for Dynamic mode. Blank = auto-generate (create) or keep current (edit). Any length and characters. Hidden for IP based.',
                 'section' => 'Account',
             ],
             [
@@ -190,6 +192,16 @@ final class SipUserController extends CrudController
                 'type' => 'select',
                 'options' => $this->callerIdGroupOptions($r),
                 'help' => 'Optional. Picks the outbound CLI from the group by dialled prefix (see Clients → CallerID). Leave empty to use the CallerID mode above.',
+                'section' => 'CLI and dial format',
+            ],
+            [
+                'name' => 'cli_restriction_ids',
+                'label' => 'CLI restrictions',
+                'type' => 'multiselect',
+                'options' => $this->cliRestrictionOptions(),
+                'add_label' => '+ Add CLI restriction…',
+                'wide' => true,
+                'help' => 'If this SIP user presents a caller ID from any selected list, the call is blocked (SIP 403, CDR: CLI restricted).',
                 'section' => 'CLI and dial format',
             ],
             [
@@ -518,11 +530,8 @@ final class SipUserController extends CrudController
         } else {
             $data['sip_host'] = 'dynamic';
             $switchingFromIp = $existing !== null && $prevMode === 'ip';
-            if ($pw !== null && $pw !== '' && mb_strlen((string) $pw) < 12) {
-                throw new \DomainException('SIP password must be at least 12 characters.');
-            }
             if ($switchingFromIp && ($pw === null || $pw === '')) {
-                throw new \DomainException('Switching to Dynamic mode requires a new SIP password (min 12 characters).');
+                throw new \DomainException('Switching to Dynamic mode requires a new SIP password.');
             }
             if ($existing === null) {
                 $data['domain'] = $domain;
@@ -671,11 +680,29 @@ final class SipUserController extends CrudController
             $cap = (float) $data['rate_cap'];
             $data['rate_cap'] = $cap > 0 ? number_format($cap, 8, '.', '') : null;
         }
+        $rawLists = $data['cli_restriction_ids'] ?? null;
+        unset($data['cli_restriction_ids']);
+        $ids = [];
+        if (is_array($rawLists)) {
+            $parts = $rawLists;
+        } else {
+            $parts = preg_split('/[\s,]+/', (string) $rawLists) ?: [];
+        }
+        foreach ($parts as $part) {
+            $n = (int) $part;
+            if ($n > 0) {
+                $ids[] = $n;
+            }
+        }
+        $this->cliRestrictionIds = array_values(array_unique($ids));
         return $data;
     }
 
     protected function afterSave(Request $r, int $id, array $data, ?array $existing): ?string
     {
+        if ($this->cliRestrictionIds !== null) {
+            $this->syncCliRestrictions($id, $this->cliRestrictionIds);
+        }
         $row = $this->repo()->findInternal($id);
         $prov = FreeswitchProvisioner::fromConfig();
         $fw = new \Ownswitch\Services\System\SipPeerFirewallService();
@@ -807,7 +834,52 @@ final class SipUserController extends CrudController
         if ($existing === null && (trim((string) ($values['codecs'] ?? '')) === '')) {
             $values['codecs'] = SipCodecs::defaultStorage($this->db());
         }
+        if ($existing !== null && !array_key_exists('cli_restriction_ids', $values)) {
+            try {
+                $st = $this->db()->prepare('SELECT cli_restriction_id FROM sip_account_cli_restrictions WHERE sip_account_id = ? ORDER BY cli_restriction_id');
+                $st->execute([(int) $existing['id']]);
+                $ids = array_map('strval', $st->fetchAll(\PDO::FETCH_COLUMN) ?: []);
+                $values['cli_restriction_ids'] = implode(',', $ids);
+            } catch (\Throwable) {
+                $values['cli_restriction_ids'] = '';
+            }
+        }
         return $values;
+    }
+
+    /** @return array<string,string> */
+    private function cliRestrictionOptions(): array
+    {
+        $out = [];
+        try {
+            $rows = $this->db()->query("SELECT id, name FROM cli_restrictions WHERE status = 'active' ORDER BY name LIMIT 500")->fetchAll();
+            foreach ($rows ?: [] as $row) {
+                $out[(string) $row['id']] = (string) $row['name'];
+            }
+        } catch (\Throwable) {
+        }
+        return $out;
+    }
+
+    /** @param list<int> $ids */
+    private function syncCliRestrictions(int $sipId, array $ids): void
+    {
+        try {
+            $this->db()->prepare('DELETE FROM sip_account_cli_restrictions WHERE sip_account_id = ?')->execute([$sipId]);
+            if ($ids === []) {
+                return;
+            }
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $st = $this->db()->prepare("SELECT id FROM cli_restrictions WHERE id IN ({$ph})");
+            $st->execute($ids);
+            $valid = array_map('intval', $st->fetchAll(\PDO::FETCH_COLUMN) ?: []);
+            $ins = $this->db()->prepare('INSERT INTO sip_account_cli_restrictions (sip_account_id, cli_restriction_id) VALUES (?,?)');
+            foreach ($valid as $listId) {
+                $ins->execute([$sipId, $listId]);
+            }
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] cli restriction assign: ' . $e->getMessage());
+        }
     }
 
     /** @param array<string,mixed> $row */

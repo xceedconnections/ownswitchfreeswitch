@@ -16,6 +16,7 @@ $fmtLim = static function ($v): string {
         <h1 class="os-page-title">My Tariff</h1>
         <p class="os-page-sub">Your sell rates and call limits (read-only)</p>
     </div>
+    <a class="btn btn-outline-primary btn-sm" href="<?= e(url('/my-rates/export')) ?>"><i class="bi bi-download me-1"></i>Download rates</a>
 </div>
 
 <?php if (!$plan): ?>

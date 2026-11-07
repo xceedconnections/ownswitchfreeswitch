@@ -32,6 +32,7 @@ final class Menu
                 ['Calls Online', '/calls-online', self::SIP_USERS],
                 ['IP Endpoints', '/ip-endpoints', self::SIP_USERS],
                 ['CallerID', '/callerid-groups', self::STAFF],
+                ['CLI Restriction', '/cli-restrictions', self::STAFF],
             ]],
             ['DIDs', [
                 ['DID Providers', '/did-providers', self::DID_STAFF],
@@ -70,6 +71,7 @@ final class Menu
                 ['Summary per Destination', '/reports/summary-destination', self::ALL],
                 ['Summary Month Destination', '/reports/summary-month-destination', self::ALL],
                 ['PDD', '/reports/pdd', self::ALL],
+                ['SIP Response Breakdown', '/reports/sip-response', self::ALL],
                 ['Financial', '/reports/financial', self::FINANCE],
                 ['Recordings', '/recordings', ['super_admin', 'admin', 'reseller', 'customer_owner']],
                 ['Fraud Alerts', '/fraud', self::RESELLER_UP],

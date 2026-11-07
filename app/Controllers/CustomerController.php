@@ -45,7 +45,7 @@ final class CustomerController extends CrudController
                 'label' => 'Portal password',
                 'type' => 'password',
                 'max' => 128,
-                'help' => 'Required on create. On edit, leave blank to keep current. Min 12 chars with upper, lower, digit.',
+                'help' => 'Required on create. On edit, leave blank to keep current. Any length and characters.',
                 'section' => 'Account',
             ],
             ['name' => 'full_name', 'label' => 'Full name', 'max' => 190, 'section' => 'Personal information'],

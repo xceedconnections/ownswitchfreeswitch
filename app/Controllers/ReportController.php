@@ -7,6 +7,7 @@ namespace Ownswitch\Controllers;
 use Ownswitch\Http\Request;
 use Ownswitch\Http\Response;
 use Ownswitch\Services\Reports\CallSummaryService;
+use Ownswitch\Support\SipCode;
 use Ownswitch\Services\Reports\FinancialReportService;
 use Ownswitch\Support\Menu;
 
@@ -173,6 +174,73 @@ final class ReportController extends BaseController
             'from' => $from,
             'to' => $to,
             'staff' => $scope->isStaff(),
+        ]);
+    }
+
+    /** SIP response code counts for a time frame. */
+    public function sipResponse(Request $r, array $p = []): Response
+    {
+        $window = is_string($r->query('window')) ? (string) $r->query('window') : '24h';
+        if (!in_array($window, ['1h', '3h', '6h', '12h', '24h', 'today', 'custom'], true)) {
+            $window = '24h';
+        }
+        [$from, $to] = $this->dateRange($r, 0);
+        $tz = new \DateTimeZone('UTC');
+        $now = new \DateTimeImmutable('now', $tz);
+        if ($window === 'today') {
+            $userTz = new \DateTimeZone($this->userTimezone($r));
+            $startLocal = new \DateTimeImmutable('today', $userTz);
+            $endLocal = $startLocal->modify('+1 day');
+            $fromUtc = $startLocal->setTimezone($tz)->format('Y-m-d H:i:s');
+            $toUtc = $endLocal->setTimezone($tz)->format('Y-m-d H:i:s');
+            $label = 'Today';
+        } elseif ($window === 'custom') {
+            [$from, $to, $fromUtc, $toUtc] = $this->dateRangeUtc($r, 0);
+            $label = $from . ' to ' . $to;
+        } else {
+            $hours = (int) $window;
+            $fromUtc = $now->modify('-' . $hours . ' hours')->format('Y-m-d H:i:s');
+            $toUtc = $now->modify('+1 minute')->format('Y-m-d H:i:s');
+            $label = 'Last ' . $hours . ' hour' . ($hours === 1 ? '' : 's');
+        }
+        $scope = $this->scope($r);
+        [$tw, $tp] = $scope->where('owned', 'c');
+        $rows = [];
+        $total = 0;
+        try {
+            $st = $this->db()->prepare(
+                "SELECT COALESCE(c.sip_response, 0) AS code, COUNT(*) AS calls
+                 FROM cdrs c
+                 WHERE ({$tw}) AND c.setup_at >= ? AND c.setup_at < ?
+                 GROUP BY code
+                 ORDER BY calls DESC, code ASC"
+            );
+            $st->execute([...$tp, $fromUtc, $toUtc]);
+            $raw = $st->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+            foreach ($raw as $row) {
+                $total += (int) $row['calls'];
+            }
+            foreach ($raw as $row) {
+                $code = (int) $row['code'];
+                $calls = (int) $row['calls'];
+                $rows[] = [
+                    'code' => $code > 0 ? (string) $code : '—',
+                    'label' => $code > 0 ? SipCode::label($code) : 'No SIP code',
+                    'calls' => $calls,
+                    'share' => $total > 0 ? number_format($calls * 100 / $total, 1, '.', '') : '0.0',
+                ];
+            }
+        } catch (\Throwable $e) {
+            error_log('[ownswitch] sip response report: ' . $e->getMessage());
+        }
+        return $this->view('reports/sip_response', [
+            'title' => 'SIP Response Breakdown',
+            'rows' => $rows,
+            'total' => $total,
+            'window' => $window,
+            'from' => $from,
+            'to' => $to,
+            'label' => $label,
         ]);
     }
 

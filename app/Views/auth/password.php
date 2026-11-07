@@ -16,12 +16,12 @@
     </div>
     <div class="mb-3">
         <label class="form-label fw-semibold" for="new">New password</label>
-        <input type="password" class="form-control" id="new" name="new" required autocomplete="new-password" minlength="12">
-        <div class="form-text">At least 12 characters with upper-case, lower-case and a digit.</div>
+        <input type="password" class="form-control" id="new" name="new" required autocomplete="new-password">
+        <div class="form-text">Any length and any characters.</div>
     </div>
     <div class="mb-3">
         <label class="form-label fw-semibold" for="confirm">Confirm new password</label>
-        <input type="password" class="form-control" id="confirm" name="confirm" required autocomplete="new-password" minlength="12">
+        <input type="password" class="form-control" id="confirm" name="confirm" required autocomplete="new-password">
     </div>
     <button class="btn btn-primary" type="submit" data-once><i class="bi bi-key me-1"></i>Update password</button>
 </form>

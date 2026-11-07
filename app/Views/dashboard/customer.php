@@ -125,7 +125,8 @@ if ($lastCdrAt) {
         <h1 class="mc-title"><?= e($name) ?> <span class="mc-title-sep">/</span> MISSION CONTROL</h1>
         <span class="mc-badge"><?= e($billingMode) ?></span>
     </div>
-    <div class="mc-head-right text-muted small">
+    <div class="mc-head-right text-muted small d-flex align-items-center gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="<?= e(url('/my-rates/export')) ?>"><i class="bi bi-download me-1"></i>Download rates</a>
         <span class="mc-live-dot<?= $callsPaused ? ' is-paused' : ($lowBalanceWarn ? ' is-warn' : '') ?>"></span>
         <?php if ($callsPaused): ?>
             Calling paused

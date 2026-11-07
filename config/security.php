@@ -16,7 +16,7 @@ return [
         'header' => 'X-CSRF-Token',
     ],
     'auth' => [
-        'min_password_length'   => 12,
+        'min_password_length'   => 1,
         'max_failed_logins'     => 5,
         'lockout_minutes'       => 15,
         'ip_window_minutes'     => 10,

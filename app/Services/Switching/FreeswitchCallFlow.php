@@ -115,6 +115,10 @@ final class FreeswitchCallFlow
         // direct = peer-to-peer RTP (bypass_media); relay/record = media through FreeSWITCH.
         $bypass = $media === 'direct' ? 'true' : 'false';
         $inboundCid = $this->inboundCallerId($r);
+        $customerCli = $this->outboundCallerId($account, [], $inboundCid, $routeDest);
+        if ($this->cliRestricted((int) ($account['id'] ?? 0), [$customerCli, $inboundCid['number'], $inboundCid['rpid'], $inboundCid['pai']])) {
+            return $this->reject('403', 'CALL_REJECTED', 'CLI restricted');
+        }
 
         $bridges = [];
         $primaryTrunk = null;
@@ -259,6 +263,7 @@ final class FreeswitchCallFlow
         if ($user === '') {
             $user = (string) ($vars['sip_from_user'] ?? '');
         }
+        $marked = trim((string) ($vars['os_failure_reason'] ?? ''));
         $cause = strtoupper((string) ($vars['hangup_cause'] ?? 'NORMAL_CLEARING'));
         $disp = $bill > 0 ? 'ANSWERED' : match (true) {
             str_contains($cause, 'BUSY') => 'BUSY',
@@ -278,6 +283,9 @@ final class FreeswitchCallFlow
         // An answered call was SIP 200. Caller hangup often leaves sip_term_status empty.
         if ($sipCode <= 0 && $bill > 0) {
             $sipCode = 200;
+        }
+        if ($marked === 'CLI restricted') {
+            $sipCode = 403;
         }
         $mediaPol = strtolower(trim((string) ($vars['os_media_policy'] ?? '')));
         if (!in_array($mediaPol, MediaPolicy::CHOICES, true)) {
@@ -319,7 +327,7 @@ final class FreeswitchCallFlow
             'direction' => $direction,
             'hangup_initiator' => $this->mapHangupInitiator((string) ($vars['sip_hangup_disposition'] ?? ''), $cause),
             'hangup_cause' => $cause !== '' ? $cause : null,
-            'failure_reason' => $bill > 0 ? null : ($cause !== '' ? $cause : null),
+            'failure_reason' => $bill > 0 ? null : ($marked !== '' ? $marked : ($cause !== '' ? $cause : null)),
             'sip_trace' => $trace,
             'media_policy_requested' => $mediaPol !== '' ? $mediaPol : null,
             'media_policy_actual' => $mediaPol !== '' ? $mediaPol : null,
@@ -1177,14 +1185,58 @@ final class FreeswitchCallFlow
         );
     }
 
-    private function reject(string $code, string $cause): string
+    private function reject(string $code, string $cause, string $reason = ''): string
     {
+        $mark = $reason !== ''
+            ? '<action application="set" data="os_failure_reason=' . $this->x($reason) . '"/>'
+            : '';
         return $this->extension(
             'reject',
             '.*',
-            '<action application="respond" data="' . $code . '"/>'
+            $mark
+            . '<action application="respond" data="' . $code . '"/>'
             . '<action application="hangup" data="' . $cause . '"/>'
         );
+    }
+
+    /** @param list<string> $clis */
+    private function cliRestricted(int $sipAccountId, array $clis): bool
+    {
+        if ($sipAccountId <= 0) {
+            return false;
+        }
+        $alts = [];
+        foreach ($clis as $cli) {
+            $digits = preg_replace('/\D+/', '', $cli) ?? '';
+            if ($digits === '') {
+                continue;
+            }
+            $alts[$digits] = true;
+            if (strlen($digits) === 11 && str_starts_with($digits, '1')) {
+                $alts[substr($digits, 1)] = true;
+            } elseif (strlen($digits) === 10) {
+                $alts['1' . $digits] = true;
+            }
+        }
+        if ($alts === []) {
+            return false;
+        }
+        $keys = array_keys($alts);
+        $in = implode(',', array_fill(0, count($keys), '?'));
+        try {
+            $st = $this->db->prepare(
+                "SELECT 1
+                 FROM sip_account_cli_restrictions s
+                 JOIN cli_restrictions g ON g.id = s.cli_restriction_id AND g.status = 'active'
+                 JOIN cli_restriction_numbers n ON n.cli_restriction_id = g.id
+                 WHERE s.sip_account_id = ? AND n.cli_digits IN ({$in})
+                 LIMIT 1"
+            );
+            $st->execute([$sipAccountId, ...$keys]);
+            return (bool) $st->fetchColumn();
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function extension(string $name, string $expr, string $actions): string

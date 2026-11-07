@@ -7,6 +7,7 @@ use Ownswitch\Controllers\AuthController;
 use Ownswitch\Controllers\BillingController;
 use Ownswitch\Controllers\CarrierController;
 use Ownswitch\Controllers\CallerIdGroupController;
+use Ownswitch\Controllers\CliRestrictionController;
 use Ownswitch\Controllers\CdrController;
 use Ownswitch\Controllers\CustomRateController;
 use Ownswitch\Controllers\CustomerController;
@@ -118,6 +119,7 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $r->post('/callerid-groups/{id}/numbers', [$cidGroups, 'addNumber'], [$STAFF]);
     $r->post('/callerid-groups/{id}/numbers/{numberId}/delete', [$cidGroups, 'deleteNumber'], [$STAFF]);
     $r->get('/my-rates', [MyRatesController::class, 'index'], [$role(Menu::CUSTOMER_RATES)]);
+    $r->get('/my-rates/export', [MyRatesController::class, 'export'], [$role(Menu::CUSTOMER_RATES)]);
 
     // DIDs (inbound)
     $crud($r, '/did-providers', new DidController('providers'), $role(Menu::DID_STAFF));
@@ -179,6 +181,15 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $trunkGroups = new RoutingController('plans');
     $crud($r, '/trunk-groups', $trunkGroups, $STAFF);
     $crud($r, '/destination-policies', new DestinationPolicyController(), $STAFF);
+    $cli = new CliRestrictionController();
+    $r->get('/cli-restrictions', [$cli, 'index'], [$STAFF]);
+    $r->get('/cli-restrictions/create', [$cli, 'create'], [$STAFF]);
+    $r->post('/cli-restrictions', [$cli, 'store'], [$STAFF]);
+    $r->get('/cli-restrictions/{id}', [$cli, 'numbers'], [$STAFF]);
+    $r->post('/cli-restrictions/{id}', [$cli, 'update'], [$STAFF]);
+    $r->post('/cli-restrictions/{id}/delete', [$cli, 'destroy'], [$STAFF]);
+    $r->post('/cli-restrictions/{id}/numbers', [$cli, 'addNumbers'], [$STAFF]);
+    $r->post('/cli-restrictions/{id}/numbers/{numberId}/delete', [$cli, 'deleteNumber'], [$STAFF]);
     $dnc = new DncController();
     $r->get('/dnc', [$dnc, 'index'], [$STAFF]);
     $r->get('/dnc/create', [$dnc, 'create'], [$STAFF]);
@@ -217,6 +228,7 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $r->get('/reports/cdr-failed', [$rep, 'cdrFailed'], [$all]);
     $r->get('/reports/asr-acd', static fn () => Response::redirect(url('/reports/summary-day')));
     $r->get('/reports/pdd', [$rep, 'pdd'], [$all]);
+    $r->get('/reports/sip-response', [$rep, 'sipResponse'], [$all]);
     $r->get('/reports/cdr-reconciliation', [$rep, 'cdrReconciliation'], [$role(Menu::FINANCE)]);
     $r->get('/reports/financial', [$rep, 'financial'], [$role(Menu::FINANCE)]);
     // Slugs kept inline so a missing CallSummaryService class cannot 500 the whole app (incl. /login).
@@ -293,6 +305,7 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $r->post('/settings/firewall/config', [$fw, 'saveConfig'], [$STAFF]);
     $ver = new VersionController();
     $r->get('/settings/version', [$ver, 'index'], [$STAFF]);
+    $r->get('/settings/version/update', static fn () => Response::redirect(url('/settings/version')));
     $r->post('/settings/version/update', [$ver, 'update'], [$STAFF]);
 
     // Magnus scaffold modules (every remaining menu item)

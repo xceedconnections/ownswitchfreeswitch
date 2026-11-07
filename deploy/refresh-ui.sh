@@ -81,6 +81,21 @@ if id www-data >/dev/null 2>&1; then
   usermod -aG ownswitch www-data 2>/dev/null || true
 fi
 
+# Migrate the new release BEFORE switching current and restarting PHP.
+# Switching first left the portal on new code with the old schema (500: tables missing)
+# and the in-flight Update request never reached its redirect.
+if [[ -f "$REL/bin/migrate.php" ]]; then
+  echo "Running migrations…"
+  if runuser -u ownswitch -- env OWNSWITCH_ENV_FILE="${OWN_ETC}/ownswitch.env" php "$REL/bin/migrate.php"; then
+    echo "Migrations OK"
+  elif env OWNSWITCH_ENV_FILE="${OWN_ETC}/ownswitch.env" php "$REL/bin/migrate.php"; then
+    echo "Migrations OK (root)"
+  else
+    echo "FATAL: migrations failed — leaving the current release in place" >&2
+    exit 1
+  fi
+fi
+
 ln -sfn "$REL" "$OWN_OPT/current"
 echo "Switched current → $REL"
 
@@ -184,19 +199,6 @@ if ! grep -q 'MISSION CONTROL\|mc-pause-banner' "$OWN_OPT/current/app/Views/dash
   echo "FATAL: deployed current/ still has old customer dashboard" >&2
   exit 1
 fi
-# Apply DB migrations (must succeed for new modules e.g. DIDs)
-if [[ -f "$REL/bin/migrate.php" ]]; then
-  echo "Running migrations…"
-  if runuser -u ownswitch -- env OWNSWITCH_ENV_FILE="${OWN_ETC}/ownswitch.env" php "$REL/bin/migrate.php"; then
-    echo "Migrations OK"
-  elif env OWNSWITCH_ENV_FILE="${OWN_ETC}/ownswitch.env" php "$REL/bin/migrate.php"; then
-    echo "Migrations OK (root)"
-  else
-    echo "FATAL: migrations failed — DID and other new tables will 500 until this succeeds" >&2
-    exit 1
-  fi
-fi
-
 # Keep Sofia gateway include path correct without restarting the profile (no REGISTER flap).
 # Profile XML includes are relative to sip_profiles/ → external/*.xml
 FS_CONF="${FREESWITCH_CONF:-/usr/local/freeswitch/conf}"
