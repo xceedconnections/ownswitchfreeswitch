@@ -3,24 +3,24 @@
 ?>
 <div class="os-page-head os-dialer-head">
     <div>
-        <h1 class="os-page-title">Dialer</h1>
-        <p class="os-page-sub">Online Web Dialer</p>
+        <h1 class="os-page-title">Web-Dialer</h1>
+        <p class="os-page-sub">Online web phone</p>
     </div>
 </div>
 
 <?php if ($error !== ''): ?>
     <div class="alert alert-danger os-dialer-alert"><?= e($error) ?></div>
 <?php else: ?>
-    <?php if (empty($webrtc['enabled'])): ?>
-        <div class="alert alert-warning os-dialer-alert">WebRTC is not enabled on this server yet. An administrator can turn it on under Settings → WebRTC.</div>
+    <?php if (empty($webrtc['enabled']) || empty($webrtc['listening'])): ?>
+        <div class="alert alert-warning os-dialer-alert">WebRTC is not ready on this server yet. An administrator should open Settings → WebRTC and click Enable WebRTC.</div>
     <?php endif; ?>
     <div class="os-dialer-wrap">
         <div class="os-phone" id="os-dialer"
-             data-cred="<?= e(url('/dialer/credentials')) ?>"
+             data-cred="<?= e(url('/web-dialer/credentials')) ?>"
              data-domain="<?= e((string) ($sipDomain ?? '')) ?>">
             <?= csrf_field() ?>
             <div class="os-phone-top">
-                <div class="os-phone-brand">Ownswitch Softphone</div>
+                <div class="os-phone-brand">ON Switch</div>
                 <div class="os-phone-link" id="os-dialer-link" data-state="offline">
                     <span class="os-phone-dot" aria-hidden="true"></span>
                     <span id="os-dialer-link-text">Disconnected</span>
@@ -91,6 +91,7 @@
                 </button>
             </div>
             <p class="os-phone-hint">Enter dials · Esc hangs up · paste a number into the field</p>
+            <p class="os-phone-powered">Powered by <a href="https://xceedconnections.com" target="_blank" rel="noopener noreferrer">Xceed Connections</a></p>
             <audio id="os-dialer-remote" autoplay playsinline></audio>
         </div>
     </div>

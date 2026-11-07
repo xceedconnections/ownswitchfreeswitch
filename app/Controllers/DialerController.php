@@ -24,7 +24,7 @@ final class DialerController extends BaseController
         } catch (\Throwable) {
         }
         return $this->view('dialer/index', [
-            'title' => 'Dialer',
+            'title' => 'Web-Dialer',
             'accounts' => $accounts,
             'error' => $accounts === [] ? self::NO_ACCOUNT : '',
             'webrtc' => $webrtc,
@@ -40,8 +40,15 @@ final class DialerController extends BaseController
         if ($row === null) {
             return $this->json(['ok' => false, 'error' => self::NO_ACCOUNT], 403);
         }
-        $mode = strtolower((string) ($row['connection_mode'] ?? ''));
-        if ($mode === 'ip' || trim((string) ($row['password_enc'] ?? '')) === '') {
+        $mode = strtolower(trim((string) ($row['connection_mode'] ?? 'dynamic')));
+        if ($mode === '') {
+            $mode = 'dynamic';
+        }
+        $host = strtolower(trim((string) ($row['sip_host'] ?? 'dynamic')));
+        if ($host === '') {
+            $host = 'dynamic';
+        }
+        if ($mode !== 'dynamic' || $host !== 'dynamic' || trim((string) ($row['password_enc'] ?? '')) === '') {
             return $this->json(['ok' => false, 'error' => self::NO_ACCOUNT], 403);
         }
         try {
@@ -69,7 +76,7 @@ final class DialerController extends BaseController
             'password' => $password,
             'domain' => $domain,
             'ws_url' => 'wss://' . $domain . '/sip-ws',
-            'webrtc_enabled' => !empty($webrtc['enabled']),
+            'webrtc_enabled' => !empty($webrtc['enabled']) && !empty($webrtc['listening']),
         ]);
     }
 
@@ -112,9 +119,10 @@ final class DialerController extends BaseController
                 "SELECT s.id, s.username
                  FROM sip_accounts s
                  WHERE s.status = 'active'
-                   AND s.connection_mode = 'dynamic'
+                   AND COALESCE(NULLIF(TRIM(s.connection_mode), ''), 'dynamic') = 'dynamic'
+                   AND LOWER(TRIM(COALESCE(s.sip_host, 'dynamic'))) IN ('', 'dynamic')
                    AND s.password_enc IS NOT NULL
-                   AND s.password_enc <> ''
+                   AND TRIM(s.password_enc) <> ''
                    AND ({$w})
                  ORDER BY s.username
                  LIMIT 200"

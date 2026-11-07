@@ -29,7 +29,7 @@ final class Menu
                 ['Users', '/users', self::RESELLER_UP],
                 ['Resellers', '/resellers', self::STAFF],
                 ['SIP Users', '/sip-users', self::SIP_USERS],
-                ['Dialer', '/dialer', self::SIP_USERS],
+                ['Web-Dialer', '/web-dialer', self::SIP_USERS],
                 ['Calls Online', '/calls-online', self::SIP_USERS],
                 ['IP Endpoints', '/ip-endpoints', self::SIP_USERS],
                 ['CallerID', '/callerid-groups', self::STAFF],

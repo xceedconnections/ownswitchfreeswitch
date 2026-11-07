@@ -10,9 +10,10 @@ EXT="${FS_CONF}/sip_profiles/external.xml"
 NGINX="/etc/nginx/sites-available/ownswitch.conf"
 ENVF="/etc/ownswitch/ownswitch.env"
 MARK="ownswitch-sip-ws"
+WS_LINE='    <param name="ws-binding" value="127.0.0.1:5066"/>'
 
 ws_present() { [[ -f "$EXT" ]] && grep -q 'ws-binding' "$EXT"; }
-nginx_present() { [[ -f "$NGINX" ]] && grep -q "$MARK" "$NGINX"; }
+nginx_present() { [[ -f "$NGINX" ]] && grep -q "$MARK" "$NGINX" && grep -q 'Sec-WebSocket-Protocol' "$NGINX"; }
 
 fs_cli() {
   local pass=""
@@ -24,6 +25,10 @@ fs_cli() {
   fi
 }
 
+listening() {
+  ss -ltn 2>/dev/null | grep -qE '127\.0\.0\.1:5066|:5066' || ss -ltnH 2>/dev/null | grep -q ':5066'
+}
+
 emit_status() {
   echo "ok=1"
   if ws_present && nginx_present; then
@@ -31,7 +36,7 @@ emit_status() {
   else
     echo "enabled=0"
   fi
-  if ss -ltn 2>/dev/null | grep -q ':5066'; then
+  if listening; then
     echo "listening=1"
   else
     echo "listening=0"
@@ -40,11 +45,36 @@ emit_status() {
 
 ensure_ws_binding() {
   [[ -f "$EXT" ]] || { echo "message=FreeSWITCH external profile is missing"; return 1; }
-  if grep -q 'ws-binding' "$EXT"; then
-    return 0
-  fi
   cp -a "$EXT" "${EXT}.bak.ws.$(date +%s)"
-  sed -i '/name="sip-port"/a\    <param name="ws-binding" value="127.0.0.1:5066"/>' "$EXT"
+  if grep -q 'ws-binding' "$EXT"; then
+    sed -i -E 's#<param name="ws-binding"[^/]*/>#'"$WS_LINE"'#' "$EXT"
+  elif grep -q 'name="sip-port"' "$EXT"; then
+    sed -i '/name="sip-port"/a\'"$WS_LINE" "$EXT"
+  else
+    sed -i '/<settings>/a\'"$WS_LINE" "$EXT"
+  fi
+  grep -q 'ws-binding' "$EXT" || { echo "message=Could not write ws-binding into external.xml"; return 1; }
+}
+
+write_nginx_block() {
+  cat <<'EOF'
+    # ownswitch-sip-ws — browser dialer
+    location /sip-ws {
+        proxy_pass http://127.0.0.1:5066;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Sec-WebSocket-Protocol $http_sec_websocket_protocol;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
+
+EOF
 }
 
 ensure_nginx() {
@@ -52,29 +82,22 @@ ensure_nginx() {
   if grep -q 'microphone=()' "$NGINX"; then
     sed -i 's/microphone=()/microphone=(self)/' "$NGINX"
   fi
-  if nginx_present; then
-    nginx -t
-    systemctl reload nginx
-    return 0
-  fi
   cp -a "$NGINX" "${NGINX}.bak.ws.$(date +%s)"
+
+  # Drop any previous sip-ws location so we can rewrite a correct one.
+  if grep -q "$MARK\|location = /sip-ws\|location /sip-ws" "$NGINX"; then
+    awk '
+      /ownswitch-sip-ws|location = \/sip-ws|location \/sip-ws/ { skip=1 }
+      skip && /}/ { skip=0; next }
+      skip { next }
+      { print }
+    ' "$NGINX" >"${NGINX}.tmp"
+    mv "${NGINX}.tmp" "$NGINX"
+  fi
+
   local snippet
   snippet="$(mktemp)"
-  cat >"$snippet" <<'EOF'
-    # ownswitch-sip-ws — browser dialer
-    location = /sip-ws {
-        proxy_pass http://127.0.0.1:5066/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-        proxy_buffering off;
-    }
-
-EOF
+  write_nginx_block >"$snippet"
   SNIP="$snippet" awk '
     !done && index($0, "location / {") {
       while ((getline line < ENVIRON["SNIP"]) > 0) print line
@@ -84,6 +107,7 @@ EOF
   ' "$NGINX" >"${NGINX}.new"
   rm -f "$snippet"
   mv "${NGINX}.new" "$NGINX"
+
   if ! nginx -t; then
     echo "message=nginx -t failed, previous site config restored"
     local bak
@@ -103,8 +127,18 @@ case "$cmd" in
     ensure_ws_binding
     ensure_nginx
     fs_cli "sofia profile external restart" >/dev/null
-    sleep 1
-    echo "message=WebRTC is enabled. The browser dialer registers at wss://this-host/sip-ws."
+    sleep 2
+    if ! listening; then
+      fs_cli "sofia profile external start" >/dev/null
+      sleep 2
+    fi
+    if listening; then
+      echo "message=WebRTC is enabled. Softphone connects at wss://this-host/sip-ws."
+    else
+      echo "message=Nginx is ready, but FreeSWITCH is not listening on 5066 yet. Check sofia status / ws-binding support."
+      emit_status
+      exit 1
+    fi
     emit_status
     ;;
   *)

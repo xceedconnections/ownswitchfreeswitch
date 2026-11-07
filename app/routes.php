@@ -105,8 +105,10 @@ $router->group('', ['auth', 'tenant', 'csrf'], function (Router $r) use ($crud, 
     $crud($r, '/resellers', new ResellerController(), $STAFF);
     $crud($r, '/sip-users', new SipUserController(), $role(Menu::SIP_USERS));
     $dialer = new DialerController();
-    $r->get('/dialer', [$dialer, 'index'], [$role(Menu::SIP_USERS)]);
-    $r->post('/dialer/credentials', [$dialer, 'credentials'], [$role(Menu::SIP_USERS)]);
+    $r->get('/web-dialer', [$dialer, 'index'], [$role(Menu::SIP_USERS)]);
+    $r->post('/web-dialer/credentials', [$dialer, 'credentials'], [$role(Menu::SIP_USERS)]);
+    $r->get('/dialer', static fn () => Response::redirect(url('/web-dialer')));
+    $r->post('/dialer/credentials', static fn () => Response::redirect(url('/web-dialer')));
     $callsOnline = new CallsOnlineController();
     $r->get('/calls-online', [$callsOnline, 'index'], [$role(Menu::SIP_USERS)]);
     $r->post('/calls-online/hangup', [$callsOnline, 'hangup'], [$role(Menu::SIP_USERS)]);

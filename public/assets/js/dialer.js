@@ -243,7 +243,7 @@
         stopUa();
         sipDomain = cred.domain || sipDomain || '';
         if (!cred.webrtc_enabled) {
-            setStatus('WebRTC is not enabled. Ask an administrator to open Settings → WebRTC.');
+            setStatus('WebRTC is not ready. Ask an administrator to Enable WebRTC under Settings.');
             setLink('offline', 'Disconnected');
             return;
         }

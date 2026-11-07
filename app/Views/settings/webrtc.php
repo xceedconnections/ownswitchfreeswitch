@@ -28,6 +28,6 @@ $s = $status;
     <form method="post" action="<?= e(url('/settings/webrtc')) ?>" data-confirm="Enable WebRTC and restart the SIP profile? Current registrations drop for a few seconds.">
         <?= csrf_field() ?>
         <button class="btn btn-primary" type="submit" data-once<?= empty($s['helper']) ? ' disabled' : '' ?>>Enable WebRTC</button>
-        <a class="btn btn-outline-secondary" href="<?= e(url('/dialer')) ?>">Open dialer</a>
+        <a class="btn btn-outline-secondary" href="<?= e(url('/web-dialer')) ?>">Open Web-Dialer</a>
     </form>
 </div>
