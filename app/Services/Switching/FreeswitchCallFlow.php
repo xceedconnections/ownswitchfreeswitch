@@ -113,9 +113,21 @@ final class FreeswitchCallFlow
             $this->db
         );
         // direct = peer-to-peer RTP (bypass_media); relay/record = media through FreeSWITCH.
+        // The browser dialer must stay on FreeSWITCH so DTLS-SRTP can reach the carrier.
         $bypass = $media === 'direct' ? 'true' : 'false';
         $inboundCid = $this->inboundCallerId($r);
-        $customerCli = $this->outboundCallerId($account, [], $inboundCid, $routeDest);
+        $dialerCli = $this->dialerCli($r);
+        $cliAccount = $account;
+        if ($dialerCli !== '') {
+            $inboundCid['number'] = $dialerCli;
+            $cliAccount['caller_id_mode'] = 'passthrough';
+            $cliAccount['callerid_group_id'] = 0;
+            $cliAccount['caller_id'] = $dialerCli;
+        }
+        if ($this->fromWebsocket($r) || $dialerCli !== '') {
+            $bypass = 'false';
+        }
+        $customerCli = $this->outboundCallerId($cliAccount, [], $inboundCid, $routeDest);
         if ($this->cliRestricted((int) ($account['id'] ?? 0), [$customerCli, $inboundCid['number'], $inboundCid['rpid'], $inboundCid['pai']])) {
             return $this->reject('403', 'CALL_REJECTED', 'CLI restricted');
         }
@@ -124,7 +136,7 @@ final class FreeswitchCallFlow
         $primaryTrunk = null;
         $chosenCid = '';
         foreach ($trunks as $t) {
-            $cidNum = $this->outboundCallerId($account, $t, $inboundCid, $routeDest);
+            $cidNum = $this->outboundCallerId($cliAccount, $t, $inboundCid, $routeDest);
             if ($this->callerIdLengthReject($account, $t, $cidNum)) {
                 continue; // try next trunk / reject if none remain
             }
@@ -744,6 +756,34 @@ final class FreeswitchCallFlow
             return $this->digitsOnly($m[1]);
         }
         return $this->digitsOnly($raw);
+    }
+
+    /** Caller ID typed on the browser dialer. Empty when the call is a normal softphone. */
+    private function dialerCli(Request $r): string
+    {
+        foreach ([
+            'variable_sip_h_X-Ownswitch-Cli',
+            'variable_sip_h_x-ownswitch-cli',
+            'sip_h_X-Ownswitch-Cli',
+            'sip_h_x-ownswitch-cli',
+        ] as $key) {
+            $digits = $this->digitsOnly(trim((string) $r->input($key, '')));
+            if ($digits !== '') {
+                return $digits;
+            }
+        }
+        return '';
+    }
+
+    private function fromWebsocket(Request $r): bool
+    {
+        foreach (['variable_sip_via_protocol', 'sip_via_protocol'] as $key) {
+            $v = strtolower(trim((string) $r->input($key, '')));
+            if ($v === 'ws' || $v === 'wss') {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function digitsOnly(string $raw): string

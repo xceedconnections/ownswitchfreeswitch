@@ -26,6 +26,6 @@ return [
     'trusted_proxies' => [],
     // Content-Security-Policy: no inline scripts/styles. Bootstrap is loaded from jsDelivr with SRI.
     'csp' => "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdn.jsdelivr.net; "
-           . "img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self'; "
+           . "img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' stun:stun.l.google.com:19302; "
            . "frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 ];

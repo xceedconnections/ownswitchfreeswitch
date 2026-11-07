@@ -6,6 +6,8 @@
     <param name="sip-capture" value="no"/>
     <param name="rfc2833-pt" value="101"/>
     <param name="sip-port" value="@@SIP_PORT@@"/>
+    <!-- Browser dialer. Nginx proxies wss://host/sip-ws to this local socket. -->
+    <param name="ws-binding" value="127.0.0.1:5066"/>
     <param name="dialplan" value="XML"/>
     <param name="context" value="ownswitch"/>
     <param name="dtmf-duration" value="2000"/>

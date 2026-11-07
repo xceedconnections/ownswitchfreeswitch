@@ -165,6 +165,21 @@ elif [[ -f "$SRC/deploy/templates/update/ownswitch-update.sh" ]]; then
     visudo -cf /etc/sudoers.d/ownswitch-update >/dev/null 2>&1 || true
   fi
 fi
+if [[ -f "$SRC/deploy/templates/ssl/ownswitch-ssl.sh" ]]; then
+  install -m 0755 "$SRC/deploy/templates/ssl/ownswitch-ssl.sh" /usr/local/sbin/ownswitch-ssl
+fi
+if [[ -f "$SRC/deploy/templates/webrtc/ownswitch-webrtc.sh" ]]; then
+  install -m 0755 "$SRC/deploy/templates/webrtc/ownswitch-webrtc.sh" /usr/local/sbin/ownswitch-webrtc
+fi
+if [[ -f /usr/local/sbin/ownswitch-ssl || -f /usr/local/sbin/ownswitch-webrtc ]]; then
+  cat >/etc/sudoers.d/ownswitch-ssl <<'EOF'
+# Ownswitch portal Settings → SSL and WebRTC
+ownswitch ALL=(root) NOPASSWD: /usr/local/sbin/ownswitch-ssl
+ownswitch ALL=(root) NOPASSWD: /usr/local/sbin/ownswitch-webrtc
+EOF
+  chmod 0440 /etc/sudoers.d/ownswitch-ssl
+  visudo -cf /etc/sudoers.d/ownswitch-ssl >/dev/null 2>&1 || true
+fi
 if [[ -f "$SRC/deploy/templates/fail2ban/ownswitch-portal.conf" ]]; then
   install -m 0644 "$SRC/deploy/templates/fail2ban/ownswitch-portal.conf" /etc/fail2ban/filter.d/ownswitch-portal.conf
 fi

@@ -1056,3 +1056,18 @@ body.os-body > .os-main-top { flex: 1 0 auto; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.os-dialer { max-width: 28rem; }
+.os-dialer-status {
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+.os-dialer-number { font-size: 1.35rem; letter-spacing: .04em; }
+.os-dialer-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .5rem;
+}
+.os-dialer-key {
+  font-size: 1.25rem;
+  padding: .75rem 0;
+}

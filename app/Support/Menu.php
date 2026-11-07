@@ -29,6 +29,7 @@ final class Menu
                 ['Users', '/users', self::RESELLER_UP],
                 ['Resellers', '/resellers', self::STAFF],
                 ['SIP Users', '/sip-users', self::SIP_USERS],
+                ['Dialer', '/dialer', self::SIP_USERS],
                 ['Calls Online', '/calls-online', self::SIP_USERS],
                 ['IP Endpoints', '/ip-endpoints', self::SIP_USERS],
                 ['CallerID', '/callerid-groups', self::STAFF],
@@ -92,6 +93,8 @@ final class Menu
             ]],
             ['Settings', [
                 ['Settings', '/settings', self::STAFF],
+                ['SSL', '/settings/ssl', self::STAFF],
+                ['WebRTC', '/settings/webrtc', self::STAFF],
                 ['CLI Restriction', '/cli-restrictions', self::STAFF],
                 ['Firewall', '/settings/firewall', self::STAFF],
                 ['Version', '/settings/version', self::STAFF],
