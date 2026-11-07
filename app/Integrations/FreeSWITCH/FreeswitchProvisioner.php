@@ -290,13 +290,16 @@ final class FreeswitchProvisioner
                 // expires = unix time when registration ends (0 = unknown / treat as live)
                 $expiresAt = $expSecs > 0 ? time() + $expSecs : 0;
                 $pingStatus = strtolower(trim((string) ($reg->{'ping-status'} ?? '')));
-                $ms = $this->pingToMs((string) ($reg->{'ping-time'} ?? ''));
+                // OPTIONS Unreachable = softphone gone; do not treat as live (stale Ping-Time).
+                $reachable = ($pingStatus === '' || $pingStatus === 'reachable');
+                $ms = $reachable ? $this->pingToMs((string) ($reg->{'ping-time'} ?? '')) : 0;
                 $out[$name] = [
                     'contact' => (string) ($reg->contact ?? ''),
                     'received' => (string) ($reg->{'network-ip'} ?? ''),
                     'expires' => $expiresAt,
                     'latency_ms' => $ms,
-                    'state' => ($pingStatus === '' || $pingStatus === 'reachable') ? 'REGED' : strtoupper($pingStatus),
+                    'reachable' => $reachable,
+                    'state' => $reachable ? 'REGED' : strtoupper($pingStatus !== '' ? $pingStatus : 'UNREACHABLE'),
                 ];
             }
         }

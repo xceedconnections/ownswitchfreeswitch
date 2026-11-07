@@ -253,12 +253,16 @@
             return;
         }
         setLink('connecting', 'Connecting');
+        // nginx terminates WSS → plain WS to FreeSWITCH ws-binding. Via must say WS
+        // (not WSS) or Sofia drops replies: "invalid transport SIP/2.0/WSS".
         var socket = new JsSIP.WebSocketInterface(cred.ws_url);
+        socket.via_transport = 'WS';
         ua = new JsSIP.UA({
             sockets: [socket],
             uri: 'sip:' + cred.username + '@' + sipDomain,
             password: cred.password,
             authorization_user: cred.username,
+            display_name: cred.username,
             register: true,
             register_expires: 300,
             session_timers: false,
@@ -290,13 +294,15 @@
         ua.on('registrationFailed', function (ev) {
             registered = false;
             var cause = ev && ev.cause ? ev.cause : 'failed';
-            setStatus('Registration failed: ' + cause);
+            var code = ev && ev.response && ev.response.status_code ? (' (' + ev.response.status_code + ')') : '';
+            setStatus('Registration failed: ' + cause + code);
             setLink('offline', 'Disconnected');
             stopVu();
         });
-        ua.on('disconnected', function () {
+        ua.on('disconnected', function (ev) {
             if (!registered) {
-                setStatus('WebSocket disconnected');
+                var cause = ev && ev.cause ? String(ev.cause) : '';
+                setStatus(cause && cause !== 'error' ? ('Disconnected: ' + cause) : 'WebSocket disconnected');
                 setLink('offline', 'Disconnected');
             }
         });

@@ -451,15 +451,22 @@ final class SipUserController extends CrudController
 
             $isDynamic = $peerIps === [];
             if ($reg !== null) {
-                // Sofia REGISTER = live (same idea as trunk REGED).
-                $online = true;
-                $state = (string) ($reg['state'] ?? 'REGED');
+                $state = strtoupper(trim((string) ($reg['state'] ?? 'REGED')));
                 if ($state === '') {
                     $state = 'REGED';
                 }
-                $fromFs = (int) ($reg['latency_ms'] ?? 0);
-                if ($fromFs > 0) {
-                    $ms = $fromFs;
+                // Ping-Status Unreachable (or flag) = offline even while Sofia still holds the AOR.
+                $reachable = !isset($reg['reachable']) || !empty($reg['reachable']);
+                if (!$reachable || $state === 'UNREACHABLE' || $state === 'UNREGISTERED') {
+                    $online = false;
+                    $ms = null;
+                    $state = $state !== '' ? $state : 'UNREACHABLE';
+                } else {
+                    $online = true;
+                    $fromFs = (int) ($reg['latency_ms'] ?? 0);
+                    if ($fromFs > 0) {
+                        $ms = $fromFs;
+                    }
                 }
             } elseif ($qualify && !$isDynamic) {
                 // Fixed-IP peer(s): OPTIONS the first IP for Live column.
