@@ -13,7 +13,18 @@ MARK="ownswitch-sip-ws"
 WS_LINE='    <param name="ws-binding" value="127.0.0.1:5066"/>'
 
 ws_present() { [[ -f "$EXT" ]] && grep -q 'ws-binding' "$EXT"; }
-nginx_present() { [[ -f "$NGINX" ]] && grep -q "$MARK" "$NGINX" && grep -q 'Sec-WebSocket-Protocol' "$NGINX"; }
+nginx_present() {
+  [[ -f "$NGINX" ]] || return 1
+  # Must live in the HTTPS server, not the :80 redirect server.
+  awk '
+    /listen[[:space:]]+443/ { https=1 }
+    /listen[[:space:]]+80;/ { https=0 }
+    /listen[[:space:]]+\[::\]:80/ { https=0 }
+    /listen[[:space:]]+127\.0\.0\.1:/ { https=0 }
+    https && /ownswitch-sip-ws|location \/sip-ws/ { found=1 }
+    END { exit(found ? 0 : 1) }
+  ' "$NGINX" && grep -q 'Sec-WebSocket-Protocol' "$NGINX"
+}
 
 fs_cli() {
   local pass=""
@@ -58,7 +69,7 @@ ensure_ws_binding() {
 
 write_nginx_block() {
   cat <<'EOF'
-    # ownswitch-sip-ws — browser dialer
+    # ownswitch-sip-ws — browser dialer (HTTPS only)
     location /sip-ws {
         proxy_pass http://127.0.0.1:5066;
         proxy_http_version 1.1;
@@ -84,22 +95,26 @@ ensure_nginx() {
   fi
   cp -a "$NGINX" "${NGINX}.bak.ws.$(date +%s)"
 
-  # Drop any previous sip-ws location so we can rewrite a correct one.
-  if grep -q "$MARK\|location = /sip-ws\|location /sip-ws" "$NGINX"; then
-    awk '
-      /ownswitch-sip-ws|location = \/sip-ws|location \/sip-ws/ { skip=1 }
-      skip && /}/ { skip=0; next }
-      skip { next }
-      { print }
-    ' "$NGINX" >"${NGINX}.tmp"
-    mv "${NGINX}.tmp" "$NGINX"
-  fi
+  # Strip every previous sip-ws location from any server block.
+  awk '
+    /ownswitch-sip-ws|location = \/sip-ws|location \/sip-ws/ { skip=1 }
+    skip && /}/ { skip=0; next }
+    skip { next }
+    { print }
+  ' "$NGINX" >"${NGINX}.tmp"
+  mv "${NGINX}.tmp" "$NGINX"
 
   local snippet
   snippet="$(mktemp)"
   write_nginx_block >"$snippet"
+
+  # Insert into the HTTPS (443) server only, just before its main location /.
   SNIP="$snippet" awk '
-    !done && index($0, "location / {") {
+    /listen[[:space:]]+443/ { https=1 }
+    /listen[[:space:]]+80;/ { https=0 }
+    /listen[[:space:]]+\[::\]:80/ { https=0 }
+    /listen[[:space:]]+127\.0\.0\.1:/ { https=0 }
+    !done && https && index($0, "location / {") {
       while ((getline line < ENVIRON["SNIP"]) > 0) print line
       done = 1
     }
@@ -108,6 +123,10 @@ ensure_nginx() {
   rm -f "$snippet"
   mv "${NGINX}.new" "$NGINX"
 
+  if ! nginx_present; then
+    echo "message=Could not place /sip-ws into the HTTPS nginx server"
+    return 1
+  fi
   if ! nginx -t; then
     echo "message=nginx -t failed, previous site config restored"
     local bak
