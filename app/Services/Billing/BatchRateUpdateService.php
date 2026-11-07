@@ -38,6 +38,7 @@ final class BatchRateUpdateService
      *   prefix_filter?:?string,
      *   prefix_mode?:string,
      *   routing_plan_id?:?string,
+     *   plan_prefix_id?:?string,
      *   initial_increment?:?string,
      *   subsequent_increment?:?string
      * } $changes
@@ -83,8 +84,30 @@ final class BatchRateUpdateService
             }
         }
 
-        if (!$changeRate && $initial === null && $subsequent === null && !$setTrunk) {
-            throw new \InvalidArgumentException('Choose a trunk group, price, initial block, or billing block to update.');
+        $setPrefix = false;
+        $prefixId = null;
+        $prefixPlanId = 0;
+        if ($kind !== 'carrier' && array_key_exists('plan_prefix_id', $changes) && $changes['plan_prefix_id'] !== null && $changes['plan_prefix_id'] !== '') {
+            $setPrefix = true;
+            $rawPrefix = (string) $changes['plan_prefix_id'];
+            if ($rawPrefix === '0') {
+                $prefixId = null;
+            } elseif (ctype_digit($rawPrefix) && (int) $rawPrefix > 0) {
+                $prefixId = (int) $rawPrefix;
+                $chk = $this->pdo->prepare('SELECT rate_plan_id FROM plan_prefixes WHERE id = ? LIMIT 1');
+                $chk->execute([$prefixId]);
+                $owner = $chk->fetchColumn();
+                if ($owner === false) {
+                    throw new \InvalidArgumentException('Plan prefix is invalid');
+                }
+                $prefixPlanId = (int) $owner;
+            } else {
+                throw new \InvalidArgumentException('Plan prefix is invalid');
+            }
+        }
+
+        if (!$changeRate && $initial === null && $subsequent === null && !$setTrunk && !$setPrefix) {
+            throw new \InvalidArgumentException('Choose a trunk group, plan prefix, price, initial block, or billing block to update.');
         }
 
         $prefixFilter = trim((string) ($changes['prefix_filter'] ?? ''));
@@ -95,6 +118,9 @@ final class BatchRateUpdateService
         $cols = 'id, rate, prefix, initial_increment, subsequent_increment';
         if ($kind !== 'carrier') {
             $cols .= ', routing_plan_id';
+            if ($setPrefix) {
+                $cols .= ', rate_plan_id, plan_prefix_id';
+            }
         }
         $st = $this->pdo->prepare("SELECT {$cols} FROM `{$table}` WHERE id IN ({$ph}) AND ({$tw})");
         $st->execute([...$ids, ...$tp]);
@@ -142,12 +168,27 @@ final class BatchRateUpdateService
                     $params[] = $trunkId;
                 }
             }
+            if ($setPrefix && ($prefixId === null || (int) ($row['rate_plan_id'] ?? 0) === $prefixPlanId)) {
+                $currentPrefix = $row['plan_prefix_id'] ?? null;
+                $currentPrefix = ($currentPrefix === null || $currentPrefix === '') ? null : (int) $currentPrefix;
+                if ($currentPrefix !== $prefixId) {
+                    $set[] = 'plan_prefix_id = ?';
+                    $params[] = $prefixId;
+                }
+            }
             if ($set === []) {
                 continue;
             }
             $params[] = (int) $row['id'];
-            $upd = $this->pdo->prepare('UPDATE `' . $table . '` SET ' . implode(', ', $set) . ' WHERE id = ?');
-            $upd->execute($params);
+            try {
+                $upd = $this->pdo->prepare('UPDATE `' . $table . '` SET ' . implode(', ', $set) . ' WHERE id = ?');
+                $upd->execute($params);
+            } catch (\PDOException $e) {
+                if (str_contains($e->getMessage(), '1062') || str_contains($e->getMessage(), 'Duplicate')) {
+                    continue;
+                }
+                throw $e;
+            }
             $n++;
         }
         return ['updated' => $n];

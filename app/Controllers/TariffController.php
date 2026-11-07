@@ -239,6 +239,23 @@ final class TariffController extends CrudController
             } catch (\Throwable) {
             }
             $extra['batchTrunkGroups'] = $groups;
+            $prefixes = ['' => 'Leave unchanged', '0' => 'No plan prefix'];
+            try {
+                $pp = $this->db()->query(
+                    'SELECT pp.id, pp.prefix, pp.name, rp.name AS plan_name
+                     FROM plan_prefixes pp
+                     JOIN rate_plans rp ON rp.id = pp.rate_plan_id
+                     ORDER BY rp.name, pp.prefix, pp.name
+                     LIMIT 2000'
+                )->fetchAll();
+                foreach ($pp ?: [] as $row) {
+                    $digits = trim((string) ($row['prefix'] ?? ''));
+                    $prefixes[(string) $row['id']] = (string) $row['plan_name'] . ' — '
+                        . ($digits === '' ? 'No prefix' : $digits) . ' · ' . (string) $row['name'];
+                }
+            } catch (\Throwable) {
+            }
+            $extra['batchPlanPrefixes'] = $prefixes;
         }
         return $extra;
     }
@@ -265,6 +282,8 @@ final class TariffController extends CrudController
         $subsequent = trim((string) $r->input('subsequent_increment', ''));
         $trunkRaw = $r->input('routing_plan_id', null);
         $trunk = is_string($trunkRaw) ? $trunkRaw : null;
+        $planPrefixRaw = $r->input('plan_prefix_id', null);
+        $planPrefix = is_string($planPrefixRaw) ? $planPrefixRaw : null;
         $filters = [];
         foreach ($this->filterColumns() as $c) {
             $v = $r->input($c);
@@ -295,6 +314,7 @@ final class TariffController extends CrudController
                     'prefix_filter' => $prefix !== '' ? $prefix : null,
                     'prefix_mode' => $prefixMode === 'exact' ? 'exact' : 'starts',
                     'routing_plan_id' => $trunk,
+                    'plan_prefix_id' => $planPrefix,
                     'initial_increment' => $initial !== '' ? $initial : null,
                     'subsequent_increment' => $subsequent !== '' ? $subsequent : null,
                 ],
@@ -315,7 +335,8 @@ final class TariffController extends CrudController
         }
         $this->audit($r, 'tariff_bulk_rate_update', $this->kind === 'carrier' ? 'carrier_tariffs' : 'rate_plan_tariffs', null, null, [
             'mode' => $mode, 'value' => $value, 'prefix_filter' => $prefix, 'prefix_mode' => $prefixMode,
-            'routing_plan_id' => $trunk, 'initial_increment' => $initial, 'subsequent_increment' => $subsequent,
+            'routing_plan_id' => $trunk, 'plan_prefix_id' => $planPrefix,
+            'initial_increment' => $initial, 'subsequent_increment' => $subsequent,
             'ids' => $idList, 'updated' => $res['updated'],
         ]);
         $qs = http_build_query(array_filter($filters + ($q !== '' ? ['q' => $q] : []), static fn ($v) => $v !== null && $v !== ''));

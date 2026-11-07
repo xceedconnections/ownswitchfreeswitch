@@ -257,6 +257,7 @@ $ownerFilter = $ownerFilter ?? null;
             <?php if ($bulkRateUpdate):
                 $batchPriceLabel = (string) ($batchPriceLabel ?? 'Sell price');
                 $batchTrunkGroups = $batchTrunkGroups ?? null;
+                $batchPlanPrefixes = $batchPlanPrefixes ?? null;
             ?>
             <div class="modal fade" id="os-batch-rate-modal" tabindex="-1" aria-labelledby="os-batch-rate-title" aria-hidden="true">
                 <div class="modal-dialog">
@@ -278,6 +279,16 @@ $ownerFilter = $ownerFilter ?? null;
                                 <label class="form-label" for="batch_routing_plan_id">Trunk groups</label>
                                 <select name="routing_plan_id" id="batch_routing_plan_id" class="form-select form-select-sm">
                                     <?php foreach ($batchTrunkGroups as $k => $label): ?>
+                                        <option value="<?= e((string) $k) ?>"><?= e((string) $label) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <?php endif; ?>
+                            <?php if (is_array($batchPlanPrefixes)): ?>
+                            <div class="mb-3">
+                                <label class="form-label" for="batch_plan_prefix_id">Plan prefix</label>
+                                <select name="plan_prefix_id" id="batch_plan_prefix_id" class="form-select form-select-sm">
+                                    <?php foreach ($batchPlanPrefixes as $k => $label): ?>
                                         <option value="<?= e((string) $k) ?>"><?= e((string) $label) ?></option>
                                     <?php endforeach; ?>
                                 </select>
