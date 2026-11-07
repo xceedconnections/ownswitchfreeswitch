@@ -6,6 +6,7 @@ namespace Ownswitch\Controllers;
 
 use Ownswitch\Http\Request;
 use Ownswitch\Http\Response;
+use Ownswitch\Services\System\SslService;
 use Ownswitch\Services\System\WebrtcService;
 use Ownswitch\Support\Crypto;
 
@@ -27,6 +28,7 @@ final class DialerController extends BaseController
             'accounts' => $accounts,
             'error' => $accounts === [] ? self::NO_ACCOUNT : '',
             'webrtc' => $webrtc,
+            'sipDomain' => $this->sipDomain($r),
             'pageScripts' => $accounts === [] ? [] : ['js/jssip.min.js', 'js/dialer.js'],
         ]);
     }
@@ -53,20 +55,51 @@ final class DialerController extends BaseController
                 'error' => 'This SIP user has no saved password. Ask an administrator to set one, then try again.',
             ], 422);
         }
-        $host = strtolower(trim((string) $r->header('host')));
-        $host = preg_replace('/:\d+$/', '', $host) ?? '';
-        if ($host === '' || !preg_match('/^[a-z0-9.-]+$/', $host)) {
-            return $this->json(['ok' => false, 'error' => 'Could not determine this site hostname.'], 500);
+        $domain = $this->sipDomain($r);
+        if ($domain === '') {
+            return $this->json([
+                'ok' => false,
+                'error' => 'No SSL domain is set. Ask an administrator to install a certificate under Settings → SSL.',
+            ], 422);
         }
         $webrtc = (new WebrtcService())->status();
         return $this->json([
             'ok' => true,
             'username' => (string) $row['username'],
             'password' => $password,
-            'domain' => $host,
-            'ws_url' => 'wss://' . $host . '/sip-ws',
+            'domain' => $domain,
+            'ws_url' => 'wss://' . $domain . '/sip-ws',
             'webrtc_enabled' => !empty($webrtc['enabled']),
         ]);
+    }
+
+    /** Prefer the Let's Encrypt domain from Settings → SSL so a domain change follows the new certificate. */
+    private function sipDomain(Request $r): string
+    {
+        try {
+            $ssl = (new SslService())->status();
+            $domain = strtolower(trim((string) ($ssl['domain'] ?? '')));
+            if ($domain !== '' && preg_match('/^[a-z0-9.-]+$/', $domain)) {
+                return $domain;
+            }
+        } catch (\Throwable) {
+        }
+        $conf = '/etc/ownswitch/ssl.conf';
+        if (is_readable($conf)) {
+            $raw = (string) file_get_contents($conf);
+            if (preg_match('/^SSL_DOMAIN=(.+)$/m', $raw, $m)) {
+                $domain = strtolower(trim($m[1]));
+                if ($domain !== '' && preg_match('/^[a-z0-9.-]+$/', $domain)) {
+                    return $domain;
+                }
+            }
+        }
+        $host = strtolower(trim((string) $r->header('host')));
+        $host = preg_replace('/:\d+$/', '', $host) ?? '';
+        if ($host !== '' && preg_match('/^[a-z0-9.-]+$/', $host)) {
+            return $host;
+        }
+        return '';
     }
 
     /** @return list<array{id:int,username:string}> */
