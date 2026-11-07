@@ -311,7 +311,7 @@ $ownerFilter = $ownerFilter ?? null;
                             <div class="mb-0">
                                 <label class="form-label" for="prefix_mode">Prefix match</label>
                                 <select name="prefix_mode" id="prefix_mode" class="form-select form-select-sm">
-                                    <option value="starts">Starts with (203 matches 203, 2031, 2035)</option>
+                                    <option value="starts">Starts with</option>
                                     <option value="exact">Exact code only</option>
                                 </select>
                             </div>

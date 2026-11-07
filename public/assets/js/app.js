@@ -617,6 +617,27 @@
                 window.alert('Select at least one row to update.');
             }
         });
+        var prefixFilter = document.getElementById('prefix_filter');
+        var prefixMode = document.getElementById('prefix_mode');
+        if (prefixFilter && prefixMode) {
+            var paintPrefixMode = function () {
+                var sample = String(prefixFilter.value || '').trim();
+                var starts = prefixMode.querySelector('option[value="starts"]');
+                var exact = prefixMode.querySelector('option[value="exact"]');
+                if (starts) {
+                    starts.textContent = sample === ''
+                        ? 'Starts with'
+                        : 'Starts with (' + sample + ' matches ' + sample + ', ' + sample + '1, ' + sample + '5)';
+                }
+                if (exact) {
+                    exact.textContent = sample === ''
+                        ? 'Exact code only'
+                        : 'Exact code only (' + sample + ')';
+                }
+            };
+            prefixFilter.addEventListener('input', paintPrefixMode);
+            paintPrefixMode();
+        }
     }
 
     var planSel = document.getElementById('f_rate_plan_id');
