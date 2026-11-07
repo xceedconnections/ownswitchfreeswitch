@@ -127,13 +127,8 @@ else
   echo "WARN: $NGINX_CONF missing — skip nginx rewrite"
 fi
 
-# Hard restart FPM so Update-now never leaves a dead pool (reload can no-op while broken)
-echo "Restarting ${PHP_FPM_SVC}…"
-systemctl restart "$PHP_FPM_SVC" || systemctl restart php8.3-fpm || systemctl restart php8.2-fpm || true
-sleep 1
-if ! systemctl is-active --quiet "$PHP_FPM_SVC" 2>/dev/null && ! systemctl is-active --quiet php8.3-fpm 2>/dev/null; then
-  echo "WARN: PHP-FPM not active after restart — portal may 502. Run: sudo bash $SRC/deploy/fix-portal-502.sh" >&2
-fi
+# PHP-FPM is restarted after this script exits. Restarting it here kills the
+# portal request before it can redirect the admin back to /settings/version.
 
 # Persist APP_SRC
 if [[ -f "$OWN_ETC/install.conf" ]]; then
@@ -293,9 +288,17 @@ if [[ ! -f /usr/local/freeswitch/lib/freeswitch/mod/mod_xml_curl.so ]]; then
   echo "WARN: mod_xml_curl.so missing — SIP REGISTER will fail. Run: sudo bash $SRC/deploy/fix-fs-xml-curl.sh" >&2
 fi
 
-# Final service health (after helpers / migrations)
-systemctl restart "$PHP_FPM_SVC" 2>/dev/null || systemctl restart php8.3-fpm 2>/dev/null || true
-systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+# Final service health (after helpers / migrations).
+# Delay the PHP restart so the Update request can redirect to /settings/version first.
+echo "Scheduling ${PHP_FPM_SVC} restart in 5s…"
+if command -v systemd-run >/dev/null 2>&1 && systemd-run --on-active=5s --unit="ownswitch-fpm-restart-$$" --collect /bin/systemctl restart "$PHP_FPM_SVC"; then
+  echo "PHP-FPM restart queued"
+else
+  nohup /bin/bash -c "sleep 5; systemctl restart $(printf '%q' "$PHP_FPM_SVC") || systemctl restart php8.3-fpm || true" >/tmp/ownswitch-fpm-restart.log 2>&1 &
+  disown || true
+  echo "PHP-FPM restart queued (background)"
+fi
+systemctl reload nginx 2>/dev/null || true
 
 DOMAIN="$(grep -E '^OWNSWITCH_DOMAIN=' "$OWN_ETC/install.conf" 2>/dev/null | cut -d= -f2- || true)"
 DOMAIN="${DOMAIN:-voip.xceedconnections.com}"

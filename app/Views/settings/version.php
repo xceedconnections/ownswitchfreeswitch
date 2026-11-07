@@ -1,9 +1,13 @@
 <?php
-/** @var array $status */
+/** @var array $status @var bool $justUpdated */
 $s = $status;
+$justUpdated = !empty($justUpdated);
 $upd = !empty($s['update_available']);
 $can = !empty($s['can_update']) || !empty($s['helper']);
 ?>
+<?php if ($justUpdated): ?>
+<meta http-equiv="refresh" content="6;url=<?= e(url('/settings/version')) ?>">
+<?php endif; ?>
 <div class="os-page-head">
     <div>
         <h1 class="os-page-title">Version</h1>
@@ -55,7 +59,7 @@ $can = !empty($s['can_update']) || !empty($s['helper']);
         <p class="mb-3">You are on the latest GitHub <code>main</code> commit<?= ($s['current_short'] ?? '') !== '' ? ' (' . e((string) $s['current_short']) . ')' : '' ?>. You can still redeploy to refresh helpers and assets.</p>
     <?php endif; ?>
 
-    <form method="post" action="<?= e(url('/settings/version/update')) ?>" data-confirm="Update / redeploy Ownswitch from GitHub now? This runs as root via sudo and may briefly interrupt the admin session.">
+    <form method="post" action="<?= e(url('/settings/version/update')) ?>" data-return="<?= e(url('/settings/version?updated=1')) ?>" data-confirm="Update / redeploy Ownswitch from GitHub now? You will come back to this version page when it finishes.">
         <?= csrf_field() ?>
         <button type="submit" class="btn btn-primary" data-once<?= !$can ? ' disabled' : '' ?>>
             <i class="bi bi-cloud-download me-1"></i><?= $upd ? 'Update now' : 'Redeploy now' ?>

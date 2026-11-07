@@ -16,6 +16,7 @@ final class VersionController extends BaseController
         return $this->view('settings/version', [
             'title' => 'Version',
             'status' => $svc->status(),
+            'justUpdated' => (string) $r->query('updated', '') === '1',
         ]);
     }
 
@@ -29,9 +30,10 @@ final class VersionController extends BaseController
             } catch (\Throwable) {
             }
             $msg = $res['ok']
-                ? 'Update finished. Hard-refresh the browser (Ctrl+Shift+R).'
+                ? 'Update finished. This page reloads once the new files are active.'
                 : ('Update failed: ' . mb_substr($res['detail'], 0, 300));
-            return $this->redirect($r, '/settings/version', $msg, $res['ok'] ? 'success' : 'danger');
+            $path = $res['ok'] ? '/settings/version?updated=1' : '/settings/version';
+            return $this->redirect($r, $path, $msg, $res['ok'] ? 'success' : 'danger');
         } catch (\Throwable $e) {
             error_log('[ownswitch] version update: ' . $e->getMessage());
             return $this->redirect($r, '/settings/version', 'Update failed: ' . mb_substr($e->getMessage(), 0, 300), 'danger');

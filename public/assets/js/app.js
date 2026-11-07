@@ -10,6 +10,25 @@
     });
 
     document.addEventListener('submit', function (ev) {
+        var form = ev.target;
+        var back = form && form.getAttribute ? form.getAttribute('data-return') : null;
+        if (!back || ev.defaultPrevented) { return; }
+        ev.preventDefault();
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.disabled = true;
+        }
+        fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            credentials: 'same-origin',
+            redirect: 'manual'
+        }).finally(function () {
+            window.location.assign(back);
+        });
+    });
+
+    document.addEventListener('submit', function (ev) {
         if (ev.defaultPrevented) { return; }
         var btns = ev.target.querySelectorAll('button[type="submit"][data-once]');
         btns.forEach(function (b) {
