@@ -47,9 +47,10 @@ final class PlanPrefixController extends CrudController
                 'name' => 'prefix',
                 'label' => 'Prefix',
                 'type' => 'prefix',
-                'required' => true,
+                'required' => false,
+                'default_empty' => '',
                 'list' => true,
-                'help' => 'Digits the customer dials before the code. You can change these later; the trunk group stays on the code.',
+                'help' => 'Optional. Digits the customer dials before the code. Leave blank for no prefix. You can change these later; the trunk group stays on the code.',
             ],
             [
                 'name' => 'name',
@@ -77,15 +78,23 @@ final class PlanPrefixController extends CrudController
         if ($data['name'] === '') {
             throw new \DomainException('Name is required.');
         }
-        $prefix = preg_replace('/\D+/', '', (string) ($data['prefix'] ?? ($existing['prefix'] ?? ''))) ?? '';
-        if ($prefix === '') {
-            throw new \DomainException('Prefix must be digits only.');
-        }
+        $prefix = preg_replace('/\D+/', '', (string) ($data['prefix'] ?? '')) ?? '';
         $data['prefix'] = $prefix;
         if ($existing !== null) {
             $data['rate_plan_id'] = (int) $existing['rate_plan_id'];
         }
         return $data;
+    }
+
+    protected function enrichRows(Request $r, array $rows): array
+    {
+        foreach ($rows as &$row) {
+            if (trim((string) ($row['prefix'] ?? '')) === '') {
+                $row['prefix'] = 'No prefix';
+            }
+        }
+        unset($row);
+        return $rows;
     }
 
     protected function beforeDelete(Request $r, array $row): ?string

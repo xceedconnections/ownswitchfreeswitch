@@ -187,9 +187,14 @@ final class RateResolver
         } catch (\Throwable) {
             return null;
         }
+        $blank = null;
         foreach ($rows as $row) {
             $prefix = (string) ($row['prefix'] ?? '');
-            if ($prefix !== '' && str_starts_with($dst, $prefix)) {
+            if ($prefix === '') {
+                $blank ??= $row;
+                continue;
+            }
+            if (str_starts_with($dst, $prefix)) {
                 return [
                     'id' => (int) $row['id'],
                     'prefix' => $prefix,
@@ -197,6 +202,14 @@ final class RateResolver
                     'remainder' => substr($dst, strlen($prefix)),
                 ];
             }
+        }
+        if ($blank !== null) {
+            return [
+                'id' => (int) $blank['id'],
+                'prefix' => '',
+                'name' => (string) ($blank['name'] ?? ''),
+                'remainder' => $dst,
+            ];
         }
         return null;
     }

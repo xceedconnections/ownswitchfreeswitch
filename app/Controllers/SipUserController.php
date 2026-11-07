@@ -201,8 +201,8 @@ final class SipUserController extends CrudController
                 'options' => $this->cliRestrictionOptions(),
                 'add_label' => '+ Add CLI restriction…',
                 'wide' => true,
-                'help' => 'If this SIP user presents a caller ID from any selected list, the call is blocked (SIP 403, CDR: CLI restricted).',
-                'section' => 'CLI and dial format',
+                'help' => 'Select one or more lists. If this SIP user presents a caller ID from any selected list, the call is blocked (SIP 403, CDR: CLI restricted). Lists are created under Settings → CLI Restriction.',
+                'section' => 'CLI Restriction',
             ],
             [
                 'name' => 'cid_min_len',

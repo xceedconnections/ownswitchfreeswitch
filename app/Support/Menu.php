@@ -32,7 +32,6 @@ final class Menu
                 ['Calls Online', '/calls-online', self::SIP_USERS],
                 ['IP Endpoints', '/ip-endpoints', self::SIP_USERS],
                 ['CallerID', '/callerid-groups', self::STAFF],
-                ['CLI Restriction', '/cli-restrictions', self::STAFF],
             ]],
             ['DIDs', [
                 ['DID Providers', '/did-providers', self::DID_STAFF],
@@ -93,6 +92,7 @@ final class Menu
             ]],
             ['Settings', [
                 ['Settings', '/settings', self::STAFF],
+                ['CLI Restriction', '/cli-restrictions', self::STAFF],
                 ['Firewall', '/settings/firewall', self::STAFF],
                 ['Version', '/settings/version', self::STAFF],
                 ['System Status', '/system/status', self::STAFF],
